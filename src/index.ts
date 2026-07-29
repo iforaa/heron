@@ -34,7 +34,8 @@ export type { Easing } from './easing.ts';
 export { evaluate, channelAt, trackAt, pointAt, worldMatrices, frameAt, sampleFrames } from './timeline.ts';
 export type { Pose, NodePose, Frame, Mat } from './timeline.ts';
 
-export { renderStatic, renderSheet, partBox, sceneBox, sheetTimes, sheetWidth } from './render.ts';
+export { renderStatic, renderSheet, renderShapeSheet, listShapes, partBox, sceneBox, sheetTimes, sheetWidth } from './render.ts';
+export type { ShapeRef } from './render.ts';
 export type { Box, RenderOptions } from './render.ts';
 export { compile, EPSILON } from './compile.ts';
 export type { CompileReport, CompileOptions } from './compile.ts';

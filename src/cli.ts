@@ -71,6 +71,19 @@ function toPng(svg: string, width: number): Buffer {
   return new Resvg(svg, { fitTo: { mode: 'width', value: width }, background: 'white' }).render().asPng();
 }
 
+/**
+ * Writes a rendered SVG out, honouring `--svg`.
+ *
+ * The rule that `--svg` writes the vector and its absence rasterises at a given
+ * width is a promise made to the user by three commands at once, so it is stated
+ * once here rather than re-typed at each of them.
+ */
+function emit(svg: string, args: Args, stem: string, width: number): string {
+  const out = String(args.o ?? `${stem}.${args.svg ? 'svg' : 'png'}`);
+  write(out, args.svg ? svg : toPng(svg, width));
+  return out;
+}
+
 function num(v: unknown, d: number): number {
   const n = typeof v === 'string' ? parseFloat(v) : NaN;
   return Number.isFinite(n) ? n : d;
@@ -168,9 +181,7 @@ async function main(): Promise<void> {
     case 'snapshot': {
       const t = num(args.t, 0);
       const width = num(args.w, 520);
-      const svg = renderStatic(ch, t, { width });
-      const out = String(args.o ?? (args.svg ? 'frame.svg' : 'frame.png'));
-      write(out, args.svg ? svg : toPng(svg, width));
+      const out = emit(renderStatic(ch, t, { width }), args, 'frame', width);
       console.log(`${out}  (${ch.name} at t=${t})`);
       break;
     }
@@ -178,13 +189,13 @@ async function main(): Promise<void> {
     case 'shapes': {
       const shapes = listShapes(ch);
       const cols = num(args.cols, Math.min(5, Math.max(1, shapes.length)));
-      const svg = renderShapeSheet(ch, { cols });
-      const out = String(args.o ?? (args.svg ? 'shapes.svg' : 'shapes.png'));
-      const width = sheetWidth(cols);
-      write(out, args.svg ? svg : toPng(svg, width));
+      const out = emit(renderShapeSheet(ch, { cols }), args, 'shapes', sheetWidth(cols));
       console.log(`${out}  ${shapes.length} shape(s), one per cell, the rest ghosted`);
       const owners = new Map<string, number>();
-      for (const s of shapes) owners.set(s.path || '(root)', (owners.get(s.path || '(root)') ?? 0) + 1);
+      for (const s of shapes) {
+        const owner = s.path || '(root)';
+        owners.set(owner, (owners.get(owner) ?? 0) + 1);
+      }
       for (const [path, n] of owners) console.log(`  ${path}: ${n}`);
       if (owners.size === 1) {
         console.log(`  every shape sits in one part, so this is geometry with no anatomy yet -`);
@@ -197,10 +208,7 @@ async function main(): Promise<void> {
       const n = Math.max(2, num(args.n, 8));
       const cols = num(args.cols, Math.min(4, n));
       const times = args.t ? String(args.t).split(',').map(Number) : sheetTimes(n);
-      const svg = renderSheet(ch, times, { cols });
-      const out = String(args.o ?? (args.svg ? 'sheet.svg' : 'sheet.png'));
-      const width = sheetWidth(cols);
-      write(out, args.svg ? svg : toPng(svg, width));
+      const out = emit(renderSheet(ch, times, { cols }), args, 'sheet', sheetWidth(cols));
       console.log(`${out}  (${times.length} frames: ${times.map((t) => t.toFixed(2)).join(' ')})`);
       break;
     }

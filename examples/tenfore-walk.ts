@@ -51,12 +51,6 @@ const BEHIND = -5;
 
 const SEGMENTS: [number, number] = [KNEE[1] - HIP[1], ANKLE[1] - KNEE[1]];
 
-const move = (p: Vec2, dx: number, dy: number): Vec2 => [p[0] + dx, p[1] + dy];
-const shift = (pts: Vec2[], dx: number, dy: number): Vec2[] => pts.map((p) => move(p, dx, dy));
-/** potrace writes one absolute moveto and then relative curves, so only M moves. */
-const shiftPath = (d: string, dx: number, dy: number): string =>
-  d.replace(/M\s+(-?[\d.]+)\s+(-?[\d.]+)/g, (_, x, y) => `M ${(+x + dx).toFixed(1)} ${(+y + dy).toFixed(1)}`);
-
 // --- runs, measured ----------------------------------------------------------
 
 const THIGH_P: Vec2[] = [[508.9,578.4],[508.8,580.6],[508.7,582.4],[508.5,586.3],[508.3,592.2],[508.2,593.1],[508.2,594.3],[508,678.6],[508.1,679.8],[509.9,690.4],[511.1,695.8],[505.1,737.2]];
@@ -70,18 +64,26 @@ const FOOT_PAD = 'M 471 935 c -23 5 -32 8 -37 14 -8 7 0 15 19 20 8 3 28 6 33 6 2
 /**
  * One leg, drawn from the measured run.
  *
- * The far leg is the same geometry moved across the body, so both legs are the
- * measurement rather than one measurement and one guess.
+ * Both legs are built from the same coordinates and the far one is *moved* by
+ * its own transform, rather than by rewriting every number in it. The wrapper
+ * part is free to carry that offset because `applyGait` only ever animates the
+ * thigh, shin and foot inside it.
+ *
+ * The alternative — adding dx, dy to each point — also meant translating a
+ * potrace `d` string by hand, which is a regex that happens to work only because
+ * potrace writes one absolute moveto and then relative curves. Letting the
+ * matrix do it removes that assumption, and it carries the pivots and the
+ * contact point along for free.
  */
-function leg(name: string, tint: string, dx: number, dy: number): void {
+function leg(name: string, tint: string): void {
   part(name, () => {
-    part('thigh', { pivot: move(HIP, dx, dy) }, () => {
-      ribbon(shift(THIGH_P, dx, dy), THIGH_W, { fill: tint });
-      part('shin', { pivot: move(KNEE, dx, dy) }, () => {
-        ribbon(shift(SHIN_P, dx, dy), SHIN_W, { fill: tint });
-        part('foot', { pivot: move(ANKLE, dx, dy), contact: [ANKLE[0] + dx, GROUND + dy] }, () => {
-          ribbon(shift(FOOT_P, dx, dy), FOOT_W, { fill: tint });
-          path({ d: shiftPath(FOOT_PAD, dx, dy), fill: tint });
+    part('thigh', { pivot: HIP }, () => {
+      ribbon(THIGH_P, THIGH_W, { fill: tint });
+      part('shin', { pivot: KNEE }, () => {
+        ribbon(SHIN_P, SHIN_W, { fill: tint });
+        part('foot', { pivot: ANKLE, contact: [ANKLE[0], GROUND] }, () => {
+          ribbon(FOOT_P, FOOT_W, { fill: tint });
+          path({ d: FOOT_PAD, fill: tint });
         });
       });
     });
@@ -98,7 +100,7 @@ export const tenforeWalk: Character = character(
   () => {
     part('body', { pivot: [500, 470] }, () => {
       // Behind the torso, so it reads as the far side.
-      leg('legFar', FAR, ACROSS, BEHIND);
+      leg('legFar', FAR);
 
       ribbon([
         [363.4, 378.1], [364.9, 378.2], [367, 378.1], [371.6, 377.7], [374.6, 377.2], [378.9, 376.2],
@@ -223,7 +225,7 @@ export const tenforeWalk: Character = character(
         });
       });
 
-      leg('legNear', INK, 0, 0);
+      leg('legNear', INK);
     });
   },
 );
@@ -260,6 +262,12 @@ const gait = walkCycle({
   stanceKnee: 15,
   kneeBreak: 62,
   toeTuck: -46,
+});
+
+// The far leg stands where the near one does, then is moved across the body.
+tenforeWalk.part('legFar').animate({
+  x: keys([[0, ACROSS], [1, ACROSS]]),
+  y: keys([[0, BEHIND], [1, BEHIND]]),
 });
 
 applyGait(tenforeWalk, 'legNear', gait);

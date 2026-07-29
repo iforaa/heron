@@ -36,7 +36,7 @@
  */
 
 import { type Coverage, coverage, rasterise } from './raster.ts';
-import { type Model, controlCount, evalScalar, fitScalar, model } from './smooth.ts';
+import { type Model, evalScalar, fitScalar, model } from './smooth.ts';
 import { ribbonPath } from './scene.ts';
 import type { Vec2 } from './scene.ts';
 
@@ -108,20 +108,12 @@ interface Fitted {
   cw: Float64Array;
 }
 
-function arcLength(pts: Vec2[], closed: boolean): number {
-  let d = 0;
-  for (let i = 1; i < pts.length; i++) d += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-  if (closed && pts.length) d += Math.hypot(pts[0][0] - pts.at(-1)![0], pts[0][1] - pts.at(-1)![1]);
-  return d;
-}
-
 /** Rebuilds the sampled ribbon from its control points. */
 function evaluate(f: Fitted): void {
-  const n = f.ribbon.points.length;
-  const xs = evalScalar(f.m, f.cx, n);
-  const ys = evalScalar(f.m, f.cy, n);
-  const ws = evalScalar(f.m, f.cw, n);
-  for (let i = 0; i < n; i++) {
+  const xs = evalScalar(f.m, f.cx);
+  const ys = evalScalar(f.m, f.cy);
+  const ws = evalScalar(f.m, f.cw);
+  for (let i = 0; i < f.ribbon.points.length; i++) {
     f.ribbon.points[i] = [xs[i], ys[i]];
     f.ribbon.widths[i] = Math.max(0, ws[i]);
   }
@@ -133,10 +125,11 @@ function evaluate(f: Fitted): void {
  * and becomes a curve, before the reference is ever consulted.
  */
 function fit(r: Ribbon): Fitted {
-  const k = controlCount(arcLength(r.points, r.closed), r.points.length, r.closed);
-  const m = model(r.points, r.closed, k);
+  // `model` sizes itself from the run's own arc length, which it measures while
+  // parameterising. Measuring it again here would be the same loop twice.
+  const m = model(r.points, r.closed);
   const f: Fitted = {
-    ribbon: { ...r, points: r.points.map((p): Vec2 => [p[0], p[1]]), widths: [...r.widths] },
+    ribbon: copy(r),
     m,
     cx: fitScalar(m, r.points.map((p) => p[0])),
     cy: fitScalar(m, r.points.map((p) => p[1])),
@@ -165,18 +158,23 @@ function score(ref: Coverage, c: Coverage): number {
   return hi ? lo / hi : 0;
 }
 
-/** Only the controls are state; the geometry is recomputed from them. */
+/** A ribbon that shares nothing mutable with the one it came from. */
+const copy = (r: Ribbon): Ribbon => ({ ...r, points: [...r.points], widths: [...r.widths] });
+
+/**
+ * Only the controls are state; the geometry is recomputed from them.
+ *
+ * The point arrays are copied but the tuples inside are not, because `evaluate`
+ * replaces every one of them before anything reads the clone.
+ */
 function clone(fs: Fitted[]): Fitted[] {
-  return fs.map((f) => {
-    const c: Fitted = {
-      ...f,
-      ribbon: { ...f.ribbon, points: f.ribbon.points.map((p): Vec2 => [p[0], p[1]]), widths: [...f.ribbon.widths] },
-      cx: Float64Array.from(f.cx),
-      cy: Float64Array.from(f.cy),
-      cw: Float64Array.from(f.cw),
-    };
-    return c;
-  });
+  return fs.map((f) => ({
+    ...f,
+    ribbon: copy(f.ribbon),
+    cx: Float64Array.from(f.cx),
+    cy: Float64Array.from(f.cy),
+    cw: Float64Array.from(f.cw),
+  }));
 }
 
 const shapes = (fs: Fitted[]): Ribbon[] => fs.map((f) => f.ribbon);
@@ -201,12 +199,18 @@ export function refine(
   const before = score(reference, coverage(rasterise(svgOf(statics, ribbons, ink, w, h), w, h)));
 
   let best = ribbons.map(fit);
-  let bestScore = score(reference, coverage(rasterise(svgOf(statics, shapes(best), ink, w, h), w, h)));
+  // The rendered coverage of `best` is carried alongside its score, because the
+  // next round needs exactly this image to read its residual from. Re-rendering
+  // it at the top of the loop was the single most expensive thing in `trace`:
+  // one render at 1024x1024 costs ~250ms, and it was being paid twice a round to
+  // produce a bitmap already in hand.
+  let bestCov = coverage(rasterise(svgOf(statics, shapes(best), ink, w, h), w, h));
+  let bestScore = score(reference, bestCov);
   let step = o.step ?? 0.8;
   let used = 0;
 
   for (let round = 0; round < rounds; round++) {
-    const scene = coverage(rasterise(svgOf(statics, shapes(best), ink, w, h), w, h));
+    const scene = bestCov;
     const next = clone(best);
 
     for (const f of next) {
@@ -228,7 +232,7 @@ export function refine(
         };
         const left = probe(1);
         const right = probe(-1);
-        wide.push(left + right);
+        wide.push((left + right) * step * 0.5);
         // The sideways pull, already resolved into x and y so that projecting it
         // onto the basis is one least-squares solve per coordinate.
         const move = (left - right) * step * 0.5;
@@ -240,7 +244,7 @@ export function refine(
       // asked for that this run is actually able to do.
       const gx = fitScalar(f.m, dx);
       const gy = fitScalar(f.m, dy);
-      const gw = fitScalar(f.m, wide.map((v) => v * step * 0.5));
+      const gw = fitScalar(f.m, wide);
       for (let c = 0; c < f.m.k; c++) {
         f.cx[c] += gx[c];
         f.cy[c] += gy[c];
@@ -249,11 +253,13 @@ export function refine(
       evaluate(f);
     }
 
-    const got = score(reference, coverage(rasterise(svgOf(statics, shapes(next), ink, w, h), w, h)));
+    const nextCov = coverage(rasterise(svgOf(statics, shapes(next), ink, w, h), w, h));
+    const got = score(reference, nextCov);
     used = round + 1;
     if (got > bestScore) {
       bestScore = got;
       best = next;
+      bestCov = nextCov;
       // Still descending, so lengthen the stride. Without this the run creeps at
       // whatever the opening guess happened to be and stops early with the
       // reference still asking for more.

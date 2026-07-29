@@ -51,26 +51,18 @@ export function transformAttr(p: NodePose, pivot?: Vec2): string {
 }
 
 /**
- * Rewrites a shape on its way out, given its position in declaration order.
- * Used to pick one shape out of the drawing; the index is the same `s0`, `s1` …
- * that `listShapes` and a traced file both count in.
+ * Rewrites a shape on its way out. Used to pick one shape out of the drawing —
+ * shapes are compared by identity, so this needs no agreement with any separate
+ * enumeration of them.
  */
-export type Paint = (shape: ShapeSpec, index: number) => ShapeSpec;
+export type Paint = (shape: ShapeSpec) => ShapeSpec;
 
 export function nodeSvg(node: Node, pose: Map<string, NodePose>, indent: string, paint?: Paint): string {
-  return nodeSvgAt(node, pose, indent, paint, { n: 0 });
-}
-
-function nodeSvgAt(
-  node: Node, pose: Map<string, NodePose>, indent: string, paint: Paint | undefined, count: { n: number },
-): string {
   const p = pose.get(node.path) ?? REST;
   const body = node.content
-    .map((item) => {
-      if (!('shape' in item)) return nodeSvgAt(item.node, pose, indent + '  ', paint, count);
-      const i = count.n++;
-      return indent + '  ' + shapeSvg(paint ? paint(item.shape, i) : item.shape);
-    })
+    .map((item) => ('shape' in item
+      ? indent + '  ' + shapeSvg(paint ? paint(item.shape) : item.shape)
+      : nodeSvg(item.node, pose, indent + '  ', paint)))
     .join('\n');
 
   const t = transformAttr(p, node.pivot);
@@ -128,47 +120,58 @@ ${nodeSvg(ch.root, pose, '  ')}
 }
 
 /**
- * Several poses tiled into one image. Agents judge motion far better from
- * frames side by side than from a single screenshot, so this is the workhorse
- * of the feedback loop. Built as nested <svg> elements, which keeps it a pure
- * SVG operation with no image compositing.
+ * The grid both sheets are drawn on.
+ *
+ * There are two of them — poses over time, and shapes one at a time — and they
+ * are read side by side, so the chrome has to stay identical. Two copies of this
+ * layout would be two instruments that could drift apart while appearing to
+ * agree, which is the one thing a comparison tool must not do.
  */
-export function renderSheet(ch: Character, times: number[], opts: { cols?: number; cellWidth?: number } = {}): string {
+function tile(ch: Character, cells: { label: string; body: string }[], cols: number, cellWidth: number): string {
   const [vx, vy, vw, vh] = ch.viewBox;
-  const cols = opts.cols ?? Math.min(4, times.length);
-  const rows = Math.ceil(times.length / cols);
-  const cw = opts.cellWidth ?? SHEET_CELL;
-  const chh = round((cw * vh) / vw);
+  const rows = Math.ceil(cells.length / cols);
+  const chh = round((cellWidth * vh) / vw);
   const pad = SHEET_PAD;
-  const W = sheetWidth(cols, cw);
+  const W = sheetWidth(cols, cellWidth);
   const H = rows * (chh + SHEET_LABEL) + pad * (rows + 1);
 
-  const cells = times.map((t, i) => {
-    const cx = pad + (i % cols) * (cw + pad);
+  const drawn = cells.map((cell, i) => {
+    const cx = pad + (i % cols) * (cellWidth + pad);
     const cy = pad + Math.floor(i / cols) * (chh + SHEET_LABEL + pad);
-    const pose = evaluate(ch, t);
     return `  <g>
-    <rect x="${cx}" y="${cy}" width="${cw}" height="${chh + SHEET_LABEL}" fill="#ffffff" stroke="#dfe4e8"/>
-    <text x="${cx + 6}" y="${cy + chh + 14}" font-family="ui-monospace,monospace" font-size="11" fill="#68757f">t=${t.toFixed(2)}</text>
-    <svg x="${cx}" y="${cy}" width="${cw}" height="${chh}" viewBox="${vx} ${vy} ${vw} ${vh}">
-${nodeSvg(ch.root, pose, '      ')}
+    <rect x="${cx}" y="${cy}" width="${cellWidth}" height="${chh + SHEET_LABEL}" fill="#ffffff" stroke="#dfe4e8"/>
+    <text x="${cx + 6}" y="${cy + chh + 14}" font-family="ui-monospace,monospace" font-size="11" fill="#68757f">${cell.label}</text>
+    <svg x="${cx}" y="${cy}" width="${cellWidth}" height="${chh}" viewBox="${vx} ${vy} ${vw} ${vh}">
+${cell.body}
     </svg>
   </g>`;
   });
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="#eef1f3"/>
-${cells.join('\n')}
+${drawn.join('\n')}
 </svg>
 `;
 }
 
+/**
+ * Several poses tiled into one image. Agents judge motion far better from
+ * frames side by side than from a single screenshot, so this is the workhorse
+ * of the feedback loop. Built as nested <svg> elements, which keeps it a pure
+ * SVG operation with no image compositing.
+ */
+export function renderSheet(ch: Character, times: number[], opts: { cols?: number; cellWidth?: number } = {}): string {
+  const cells = times.map((t) => ({
+    label: `t=${t.toFixed(2)}`,
+    body: nodeSvg(ch.root, evaluate(ch, t), '      '),
+  }));
+  return tile(ch, cells, opts.cols ?? Math.min(4, times.length), opts.cellWidth ?? SHEET_CELL);
+}
+
 // --- shape identification ----------------------------------------------------
 
-/** One drawn shape, and which part owns it. */
+/** One drawn shape, and which part owns it. Array position is its `s0`, `s1` … */
 export interface ShapeRef {
-  /** Position in declaration order, matching the `s0`, `s1` … in a traced file. */
-  index: number;
   /** Dotted path of the owning part, or `''` at the root. */
   path: string;
   shape: ShapeSpec;
@@ -179,7 +182,7 @@ export function listShapes(ch: Character): ShapeRef[] {
   const out: ShapeRef[] = [];
   const walk = (node: Node): void => {
     for (const item of node.content) {
-      if ('shape' in item) out.push({ index: out.length, path: node.path, shape: item.shape });
+      if ('shape' in item) out.push({ path: node.path, shape: item.shape });
       else walk(item.node);
     }
   };
@@ -205,35 +208,14 @@ const PICK = '#e03131';
  */
 export function renderShapeSheet(ch: Character, opts: { cols?: number; cellWidth?: number } = {}): string {
   const shapes = listShapes(ch);
-  const [vx, vy, vw, vh] = ch.viewBox;
-  const cols = opts.cols ?? Math.min(5, Math.max(1, shapes.length));
-  const rows = Math.ceil(shapes.length / cols);
-  const cw = opts.cellWidth ?? SHEET_CELL;
-  const chh = round((cw * vh) / vw);
-  const pad = SHEET_PAD;
-  const W = sheetWidth(cols, cw);
-  const H = rows * (chh + SHEET_LABEL) + pad * (rows + 1);
   const pose = evaluate(ch, 0);
-
-  const cells = shapes.map((ref, i) => {
-    const cx = pad + (i % cols) * (cw + pad);
-    const cy = pad + Math.floor(i / cols) * (chh + SHEET_LABEL + pad);
-    const body = nodeSvg(ch.root, pose, '      ', (s, at) => repaint(s, at === ref.index ? PICK : GHOST));
-    const label = ref.path ? `s${ref.index}  ${ref.path}` : `s${ref.index}`;
-    return `  <g>
-    <rect x="${cx}" y="${cy}" width="${cw}" height="${chh + SHEET_LABEL}" fill="#ffffff" stroke="#dfe4e8"/>
-    <text x="${cx + 6}" y="${cy + chh + 14}" font-family="ui-monospace,monospace" font-size="11" fill="#68757f">${label}</text>
-    <svg x="${cx}" y="${cy}" width="${cw}" height="${chh}" viewBox="${vx} ${vy} ${vw} ${vh}">
-${body}
-    </svg>
-  </g>`;
-  });
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <rect width="${W}" height="${H}" fill="#eef1f3"/>
-${cells.join('\n')}
-</svg>
-`;
+  const cells = shapes.map((ref, i) => ({
+    label: ref.path ? `s${i}  ${ref.path}` : `s${i}`,
+    // Matched on the shape itself rather than on a position counted twice: the
+    // same object `listShapes` handed back is the one the renderer reaches.
+    body: nodeSvg(ch.root, pose, '      ', (s) => repaint(s, s === ref.shape ? PICK : GHOST)),
+  }));
+  return tile(ch, cells, opts.cols ?? Math.min(5, Math.max(1, shapes.length)), opts.cellWidth ?? SHEET_CELL);
 }
 
 // --- bounding boxes ----------------------------------------------------------

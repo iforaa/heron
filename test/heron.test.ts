@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   character, part, limb, ellipse, circle, path, keys, sampled,
-  compile, evaluate, pointAt, lint, renderStatic,
+  compile, evaluate, pointAt, lint, renderStatic, renderShapeSheet, listShapes,
   cubicBezier, linear, easeInOut, walkCycle, partBox,
   arcPath, curvePath, type Vec2,
 } from '../src/index.ts';
@@ -275,19 +275,19 @@ test('walkCycle parameters change the motion they claim to', () => {
   assert.ok(Math.abs(at(big.thigh, 0)) > Math.abs(at(small.thigh, 0)), 'a bigger reach is a longer stride');
 });
 
-test('the shape sheet lists every shape in order, with the part that owns it', async () => {
-  const { listShapes } = await import('../src/render.ts');
+test('the shape sheet lists every shape in order, with the part that owns it', () => {
   const found = listShapes(crane);
   assert.ok(found.length > 5, `crane should have several shapes, got ${found.length}`);
-  assert.deepEqual(found.map((s) => s.index), found.map((_, i) => i), 'indices count in declaration order');
+  // The sheet picks a shape out by object identity, so two shapes must never be
+  // the same object -- that would light up two cells at once.
+  assert.equal(new Set(found.map((s) => s.shape)).size, found.length, 'every shape is its own object');
   // The label is what makes a cell readable, so every shape has to know its
   // owner. A shape whose path went missing is a shape nobody can place.
   assert.ok(found.every((s) => typeof s.path === 'string'), 'every shape reports an owning path');
   assert.ok(found.some((s) => s.path.includes('head')), 'and the head owns some of them');
 });
 
-test('picking a shape out never fills a stroked one', async () => {
-  const { renderShapeSheet, listShapes } = await import('../src/render.ts');
+test('picking a shape out never fills a stroked one', () => {
   const ring = character('ring', { viewBox: [0, 0, 100, 100], duration: 1 }, () => {
     circle({ cx: 50, cy: 50, r: 40, stroke: '#000', width: 4 });
     circle({ cx: 50, cy: 50, r: 5, fill: '#000' });

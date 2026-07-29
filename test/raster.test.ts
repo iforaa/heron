@@ -297,18 +297,25 @@ test('a width profile survives simplification, and a flat one costs nothing', ()
   assert.ok(straight.points.length <= 4, `a flat profile adds no points, got ${straight.points.length}`);
 });
 
+/**
+ * A straight run of half-width 18 on y=60, and its rendered truth.
+ *
+ * Shared by the two correction tests so they cannot drift into asserting
+ * against different ground truths while reading as though they agree.
+ */
+const STRAIGHT: [number, number][] = [];
+for (let x = 40; x <= 200; x += 8) STRAIGHT.push([x, 60]);
+const HALF = 18;
+const drawRibbon = (d: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">`
+  + `<rect width="240" height="120" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+const straightTruth = () =>
+  coverage(rasterise(drawRibbon(ribbonPath(STRAIGHT, STRAIGHT.map(() => HALF))), 240, 120));
+
 test('the reference pulls a wrong stroke back onto itself', async () => {
   const { refine } = await import('../src/refine.ts');
-
-  const draw = (d: string) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">`
-    + `<rect width="240" height="120" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
-
-  const line: [number, number][] = [];
-  for (let x = 40; x <= 200; x += 8) line.push([x, 60]);
-
-  // The truth: half-width 18, centred on y=60.
-  const truth = coverage(rasterise(draw(ribbonPath(line, line.map(() => 18))), 240, 120));
+  const line = STRAIGHT;
+  const truth = straightTruth();
 
   // The guess is wrong in both ways the loop is meant to separate -- too narrow
   // everywhere, and sitting three pixels off to one side.
@@ -379,13 +386,8 @@ test('fitting keeps the shape of a profile and drops the noise on it', async () 
 
 test('the correction cannot write a wobble the basis has no room for', async () => {
   const { refine } = await import('../src/refine.ts');
-  const draw = (d: string) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">`
-    + `<rect width="240" height="120" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
-
-  const line: [number, number][] = [];
-  for (let x = 40; x <= 200; x += 8) line.push([x, 60]);
-  const truth = coverage(rasterise(draw(ribbonPath(line, line.map(() => 18))), 240, 120));
+  const line = STRAIGHT;
+  const truth = straightTruth();
 
   // A guess that is right on average but ragged sample by sample: exactly what
   // a skeleton measured off a noisy raster hands over.

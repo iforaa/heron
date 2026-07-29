@@ -37,14 +37,20 @@ const STIFF = 1e-3;
 export interface Model {
   /** Control point count. */
   k: number;
-  closed: boolean;
-  /** For each sample, the first of its four active controls. */
-  first: Int32Array;
+  /**
+   * For each sample, the four control points it blends — already wrapped, so a
+   * closed run needs no modular arithmetic downstream and nothing outside this
+   * module has to know which kind of run it is holding.
+   */
+  index: Int32Array;
   /** For each sample, the four blending weights, in the same order. */
   weight: Float64Array;
   /** Cholesky factor of the normal equations, lower triangular, row-major k*k. */
   chol: Float64Array;
 }
+
+/** Samples the model was built over. */
+const samples = (m: Model): number => m.index.length / 4;
 
 /** The four uniform cubic B-spline weights at local parameter `t`. */
 function uniform(t: number, into: Float64Array, at: number): void {
@@ -62,7 +68,9 @@ function uniform(t: number, into: Float64Array, at: number): void {
  * points as a tight curl of equal sample count, which is backwards: the curl is
  * where the shape actually is.
  */
-function parameterise(pts: readonly (readonly [number, number])[], closed: boolean): Float64Array {
+function parameterise(
+  pts: readonly (readonly [number, number])[], closed: boolean,
+): { u: Float64Array; total: number } {
   const n = pts.length;
   const u = new Float64Array(n);
   let total = 0;
@@ -70,10 +78,12 @@ function parameterise(pts: readonly (readonly [number, number])[], closed: boole
     total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
     u[i] = total;
   }
+  // The closing chord counts toward the length but is not a sample, so the last
+  // sample lands short of 1 rather than on top of the first.
   if (closed) total += Math.hypot(pts[0][0] - pts[n - 1][0], pts[0][1] - pts[n - 1][1]);
   if (total <= 0) for (let i = 0; i < n; i++) u[i] = i / Math.max(1, n - 1);
   else for (let i = 0; i < n; i++) u[i] /= total;
-  return u;
+  return { u, total };
 }
 
 /** Cholesky of a small symmetric positive-definite matrix, in place. */
@@ -122,21 +132,24 @@ export function controlCount(length: number, samples: number, closed: boolean): 
  * scratch. Fitting a correction then costs about as much as blurring one did.
  */
 export function model(
-  pts: readonly (readonly [number, number])[], closed: boolean, k: number,
+  pts: readonly (readonly [number, number])[], closed: boolean, controls?: number,
 ): Model {
   const n = pts.length;
-  const u = parameterise(pts, closed);
-  const first = new Int32Array(n);
+  const { u, total } = parameterise(pts, closed);
+  // Sized from the length this run actually has, unless the caller insists.
+  const k = controls ?? controlCount(total, n, closed);
+  const index = new Int32Array(n * 4);
   const weight = new Float64Array(n * 4);
 
   for (let j = 0; j < n; j++) {
+    let first: number;
     if (closed) {
       // Periodic: the control polygon wraps, so the curve closes with no seam
       // and no special case at the join.
       const x = u[j] * k;
       const s = Math.floor(x);
       uniform(x - s, weight, j * 4);
-      first[j] = ((s % k) + k) % k;
+      first = ((s % k) + k) % k;
     } else {
       // Clamped: the ends of a run are real, measured places — a cap sits there
       // — so the curve has to reach them rather than float short of them.
@@ -144,18 +157,19 @@ export function model(
       const x = Math.min(u[j] * span, span - 1e-9);
       const s = Math.min(Math.floor(x), span - 1);
       clamped(x - s, s, span, weight, j * 4);
-      first[j] = s;
+      first = s;
     }
+    // Wrapped once, here, so no reader downstream repeats the rule.
+    for (let p = 0; p < 4; p++) index[j * 4 + p] = closed ? (first + p) % k : first + p;
   }
 
   // Normal equations, with the stiffness penalty folded straight in.
   const a = new Float64Array(k * k);
   for (let j = 0; j < n; j++) {
     for (let p = 0; p < 4; p++) {
-      const ip = closed ? (first[j] + p) % k : first[j] + p;
+      const ip = index[j * 4 + p];
       for (let q = 0; q < 4; q++) {
-        const iq = closed ? (first[j] + q) % k : first[j] + q;
-        a[ip * k + iq] += weight[j * 4 + p] * weight[j * 4 + q];
+        a[ip * k + index[j * 4 + q]] += weight[j * 4 + p] * weight[j * 4 + q];
       }
     }
   }
@@ -168,7 +182,7 @@ export function model(
     }
   }
 
-  return { k, closed, first, weight, chol: cholesky(a, k) };
+  return { k, index, weight, chol: cholesky(a, k) };
 }
 
 /**
@@ -197,30 +211,25 @@ function clamped(t: number, s: number, span: number, into: Float64Array, at: num
       n[i] = left + right;
     }
   }
-  for (let p = 0; p < 4; p++) into[at + p] = n[s + p] ?? 0;
+  for (let p = 0; p < 4; p++) into[at + p] = n[s + p];
 }
 
 /** Least-squares control points for a scalar sampled at the model's parameters. */
 export function fitScalar(m: Model, values: readonly number[]): Float64Array {
   const b = new Float64Array(m.k);
   for (let j = 0; j < values.length; j++) {
-    for (let p = 0; p < 4; p++) {
-      const i = m.closed ? (m.first[j] + p) % m.k : m.first[j] + p;
-      b[i] += m.weight[j * 4 + p] * values[j];
-    }
+    for (let p = 0; p < 4; p++) b[m.index[j * 4 + p]] += m.weight[j * 4 + p] * values[j];
   }
   return solve(m.chol, m.k, b);
 }
 
 /** Evaluates a scalar control vector back at every sample. */
-export function evalScalar(m: Model, c: Float64Array, n: number): number[] {
+export function evalScalar(m: Model, c: Float64Array): number[] {
+  const n = samples(m);
   const out = new Array<number>(n);
   for (let j = 0; j < n; j++) {
     let s = 0;
-    for (let p = 0; p < 4; p++) {
-      const i = m.closed ? (m.first[j] + p) % m.k : m.first[j] + p;
-      s += m.weight[j * 4 + p] * c[i];
-    }
+    for (let p = 0; p < 4; p++) s += m.weight[j * 4 + p] * c[m.index[j * 4 + p]];
     out[j] = s;
   }
   return out;
