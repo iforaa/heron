@@ -334,6 +334,78 @@ test('the reference pulls a wrong stroke back onto itself', async () => {
   );
 });
 
+test('the spline basis blends control points without moving the run', async () => {
+  const { model } = await import('../src/smooth.ts');
+  const ring: [number, number][] = [];
+  for (let i = 0; i < 60; i++) {
+    const a = (i / 60) * Math.PI * 2;
+    ring.push([512 + Math.cos(a) * 100, 512 + Math.sin(a) * 100]);
+  }
+  for (const closed of [false, true]) {
+    const m = model(ring, closed, 8);
+    for (let j = 0; j < ring.length; j++) {
+      let sum = 0;
+      for (let p = 0; p < 4; p++) sum += m.weight[j * 4 + p];
+      // Weights that did not sum to one would scale the run toward the origin,
+      // a little more wherever the samples happened to bunch.
+      assert.ok(Math.abs(sum - 1) < 1e-9, `${closed ? 'closed' : 'open'} weights sum to ${sum}`);
+    }
+  }
+});
+
+test('an open run keeps the ends where its caps are', async () => {
+  const { model, fitScalar, evalScalar } = await import('../src/smooth.ts');
+  const line: [number, number][] = [];
+  for (let i = 0; i < 40; i++) line.push([100 + i * 5, 300]);
+  const m = model(line, false, 6);
+  const back = evalScalar(m, fitScalar(m, line.map((p) => p[0])), line.length);
+  // An unclamped spline floats short of its own control polygon, which would
+  // pull both caps inward and shorten every stroke in the drawing.
+  assert.ok(Math.abs(back[0] - 100) < 0.5, `first end drifted to ${back[0].toFixed(2)}`);
+  assert.ok(Math.abs(back[39] - 295) < 0.5, `last end drifted to ${back[39].toFixed(2)}`);
+});
+
+test('fitting keeps the shape of a profile and drops the noise on it', async () => {
+  const { model, fitScalar, evalScalar, controlCount } = await import('../src/smooth.ts');
+  const pts: [number, number][] = Array.from({ length: 120 }, (_, i) => [i * 3, 0]);
+  const m = model(pts, false, controlCount(360, 120, false));
+  // A real taper, plus the per-pixel jitter a radius field actually carries.
+  const real = pts.map((_, i) => 20 + 6 * Math.sin((i / 120) * Math.PI * 2));
+  const noisy = real.map((v, i) => v + (i % 2 ? 0.9 : -0.9));
+  const got = evalScalar(m, fitScalar(m, noisy), pts.length);
+  const rms = (a: number[]) => Math.sqrt(a.reduce((s, v) => s + v * v, 0) / a.length);
+  assert.ok(rms(got.map((v, i) => v - real[i])) < 0.2, 'the taper survives, the jitter does not');
+});
+
+test('the correction cannot write a wobble the basis has no room for', async () => {
+  const { refine } = await import('../src/refine.ts');
+  const draw = (d: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">`
+    + `<rect width="240" height="120" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+
+  const line: [number, number][] = [];
+  for (let x = 40; x <= 200; x += 8) line.push([x, 60]);
+  const truth = coverage(rasterise(draw(ribbonPath(line, line.map(() => 18))), 240, 120));
+
+  // A guess that is right on average but ragged sample by sample: exactly what
+  // a skeleton measured off a noisy raster hands over.
+  const guess = {
+    points: line.map(([x, y], i): [number, number] => [x, y + (i % 2 ? 2.5 : -2.5)]),
+    widths: line.map((_, i) => 18 + (i % 2 ? 3 : -3)),
+    closed: false,
+    cap: 'round' as const,
+  };
+
+  const { ribbons } = refine([], [guess], truth, '#000', { rounds: 10 });
+  const ys = ribbons[0].points.map((p) => p[1]);
+  let kink = 0;
+  for (let i = 1; i < ys.length - 1; i++) kink = Math.max(kink, Math.abs(ys[i - 1] - 2 * ys[i] + ys[i + 1]));
+  // The zigzag went in at 5px peak to peak. Correcting each sample on its own
+  // reproduced it; a basis one control per SPAN pixels cannot express it.
+  assert.ok(kink < 0.5, `output still zigzags, worst bend ${kink.toFixed(2)}px`);
+  assert.ok(Math.abs(ys[Math.floor(ys.length / 2)] - 60) < 1.5, 'and it still lands on the truth');
+});
+
 test('coverage scores sub-pixel error that a threshold rounds away', () => {
   // A threshold is a cliff and the whole boundary of a mark sits on it, so a
   // binary score answers in steps and a sub-pixel correction can move nothing at

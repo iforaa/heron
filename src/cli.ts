@@ -124,6 +124,8 @@ async function main(): Promise<void> {
       const t = res.tuned;
       console.log(`  corrected against the reference: overlap ${t.before.toFixed(1)}% -> ${t.after.toFixed(1)}%`);
       console.log(`    over ${t.rounds} pass(es), moving points by at most ${t.moved.toFixed(1)}px`);
+      console.log(`    ${t.controls} control point(s) describing ${t.samples} samples, so a wobble`);
+      console.log(`    finer than the control spacing cannot be fitted to the noise`);
     }
     if (res.profiled) {
       console.log(`  ${res.profiled} run(s) carry a measured width at every point, so a taper is drawn as`);

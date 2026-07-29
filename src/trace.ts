@@ -90,6 +90,8 @@ const MOSTLY = 0.85;
 const MIN_SWEEP = 20;
 /** An arc whose radius dwarfs its own extent is a straight line in disguise. */
 const MAX_RADIUS = 5;
+/** Smallest arc radius worth naming, as a multiple of the run's own width. */
+const TIGHT = 2;
 /**
  * How much slack a fit gets once the correction pass has run.
  *
@@ -340,6 +342,12 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
       const sweep = Math.abs(round.to - round.from);
       const [x0, y0, x1, y1] = bounds(k.points, 1);
       if (sweep < MIN_SWEEP || round.r > Math.hypot(x1 - x0, y1 - y0) * MAX_RADIUS) return;
+      // A turn tighter than its own stroke is a blob, not an arc: at r = width
+      // the inner edge has almost closed on itself, and a constant-width arc
+      // through it throws away the taper that is the only thing making it read
+      // as a curl. Centreline error alone cannot see this — the fit is a good
+      // fit, of the wrong kind of thing.
+      if (round.r < pen[i] * TIGHT) return;
       const arcArgs = `cx: ${n1(round.cx / s)}, cy: ${n1(round.cy / s)}, r: ${n1(round.r / s)}`;
       const whole = k.closed || sweep >= 359;
       const angles = whole ? '' : `, from: ${n1(round.from)}, to: ${n1(round.to)}`;

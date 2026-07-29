@@ -24,9 +24,19 @@
  * This only works because the score is coverage rather than a threshold. A
  * binary overlap is a staircase — a third of a pixel of improvement changes
  * nothing at all until a pixel finally flips — so there is no slope to follow.
+ *
+ * What moves is not the points. Each run is a handful of B-spline control
+ * points (see `smooth.ts`), and the residual is projected onto that basis
+ * before anything shifts. Correcting the samples directly was overfitting: the
+ * gradient carries the raster's noise as well as the error, and with one free
+ * parameter per sample there was nothing to stop the noise being absorbed as
+ * shape. Blurring the gradient afterwards helped and cost accuracy, because the
+ * freedom was still there. Now a wobble finer than the control spacing cannot
+ * be represented, so it cannot be learned, and no blur pass is needed.
  */
 
 import { type Coverage, coverage, rasterise } from './raster.ts';
+import { type Model, controlCount, evalScalar, fitScalar, model } from './smooth.ts';
 import { ribbonPath } from './scene.ts';
 import type { Vec2 } from './scene.ts';
 
@@ -49,8 +59,12 @@ export interface RefineReport {
   before: number;
   after: number;
   rounds: number;
-  /** Largest distance any control point moved, in pixels. */
+  /** Largest distance any sample moved, in pixels. */
   moved: number;
+  /** Free parameters the correction had, across every run. */
+  controls: number;
+  /** Samples those parameters had to explain. The ratio is the regularisation. */
+  samples: number;
 }
 
 /** Bilinear sample of a coverage field, clamped at the edges. */
@@ -80,35 +94,57 @@ function normalAt(points: Vec2[], i: number, closed: boolean): Vec2 {
 }
 
 /**
- * A three-tap blur along the run.
+ * A run held as control points, plus the geometry they currently produce.
  *
- * The residual on any single edge pixel carries the raster's noise as well as
- * the error, and a control point pulled by one noisy sample puts a kink in a
- * line that was smooth. Neighbouring points are measuring the same stroke, so
- * averaging over them keeps the signal and drops most of the noise.
+ * `ribbon` is always the evaluation of `cx`/`cy`/`cw`, never edited directly.
+ * Keeping that one-way is what guarantees smoothness: there is no path by which
+ * a sample can acquire a shape the basis could not have produced.
  */
-function smooth(g: number[], passes = SMOOTH): number[] {
-  let out = g;
-  for (let p = 0; p < passes; p++) {
-    const prev = out;
-    out = prev.map((_, i) =>
-      (prev[Math.max(0, i - 1)] + 2 * prev[i] + prev[Math.min(prev.length - 1, i + 1)]) / 4);
+interface Fitted {
+  ribbon: Ribbon;
+  m: Model;
+  cx: Float64Array;
+  cy: Float64Array;
+  cw: Float64Array;
+}
+
+function arcLength(pts: Vec2[], closed: boolean): number {
+  let d = 0;
+  for (let i = 1; i < pts.length; i++) d += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  if (closed && pts.length) d += Math.hypot(pts[0][0] - pts.at(-1)![0], pts[0][1] - pts.at(-1)![1]);
+  return d;
+}
+
+/** Rebuilds the sampled ribbon from its control points. */
+function evaluate(f: Fitted): void {
+  const n = f.ribbon.points.length;
+  const xs = evalScalar(f.m, f.cx, n);
+  const ys = evalScalar(f.m, f.cy, n);
+  const ws = evalScalar(f.m, f.cw, n);
+  for (let i = 0; i < n; i++) {
+    f.ribbon.points[i] = [xs[i], ys[i]];
+    f.ribbon.widths[i] = Math.max(0, ws[i]);
   }
-  return out;
 }
 
 /**
- * How hard the correction is blurred along each run.
- *
- * This is the dial between two things worth having, and it is not a free
- * parameter. A correction applied point by point buys local accuracy and spends
- * structure: the points end up very slightly ragged, and a circle can no longer
- * be fitted through them inside a pixel, so a ring stops being expressible as a
- * ring. Blurring keeps the part of the correction that is a real shift of the
- * whole edge and discards the part that is per-pixel raster noise, which is the
- * part that was destroying the fit.
+ * Fits a run's measurement, replacing it with the closest thing the basis can
+ * say. This is where the traced geometry stops being a list of noisy samples
+ * and becomes a curve, before the reference is ever consulted.
  */
-const SMOOTH = 8;
+function fit(r: Ribbon): Fitted {
+  const k = controlCount(arcLength(r.points, r.closed), r.points.length, r.closed);
+  const m = model(r.points, r.closed, k);
+  const f: Fitted = {
+    ribbon: { ...r, points: r.points.map((p): Vec2 => [p[0], p[1]]), widths: [...r.widths] },
+    m,
+    cx: fitScalar(m, r.points.map((p) => p[0])),
+    cy: fitScalar(m, r.points.map((p) => p[1])),
+    cw: fitScalar(m, r.widths),
+  };
+  evaluate(f);
+  return f;
+}
 
 /** `statics` arrive as finished SVG elements; the ribbons are drawn as fills. */
 function svgOf(statics: string[], ribbons: Ribbon[], ink: string, w: number, h: number): string {
@@ -129,9 +165,21 @@ function score(ref: Coverage, c: Coverage): number {
   return hi ? lo / hi : 0;
 }
 
-function clone(rs: Ribbon[]): Ribbon[] {
-  return rs.map((r) => ({ ...r, points: r.points.map((p): Vec2 => [p[0], p[1]]), widths: [...r.widths] }));
+/** Only the controls are state; the geometry is recomputed from them. */
+function clone(fs: Fitted[]): Fitted[] {
+  return fs.map((f) => {
+    const c: Fitted = {
+      ...f,
+      ribbon: { ...f.ribbon, points: f.ribbon.points.map((p): Vec2 => [p[0], p[1]]), widths: [...f.ribbon.widths] },
+      cx: Float64Array.from(f.cx),
+      cy: Float64Array.from(f.cy),
+      cw: Float64Array.from(f.cw),
+    };
+    return c;
+  });
 }
+
+const shapes = (fs: Fitted[]): Ribbon[] => fs.map((f) => f.ribbon);
 
 /**
  * Nudges the ribbons until the reference stops asking for changes.
@@ -147,20 +195,27 @@ export function refine(
   const h = reference.height;
   const rounds = o.rounds ?? 12;
 
-  let best = clone(ribbons);
-  let bestScore = score(reference, coverage(rasterise(svgOf(statics, best, ink, w, h), w, h)));
-  const before = bestScore;
+  // The score of the raw measurement, before the basis has had a say. Reported
+  // as `before` so the number covers everything this pass does, including the
+  // accuracy it gives up by refusing to represent noise.
+  const before = score(reference, coverage(rasterise(svgOf(statics, ribbons, ink, w, h), w, h)));
+
+  let best = ribbons.map(fit);
+  let bestScore = score(reference, coverage(rasterise(svgOf(statics, shapes(best), ink, w, h), w, h)));
   let step = o.step ?? 0.8;
   let used = 0;
 
   for (let round = 0; round < rounds; round++) {
-    const scene = coverage(rasterise(svgOf(statics, best, ink, w, h), w, h));
+    const scene = coverage(rasterise(svgOf(statics, shapes(best), ink, w, h), w, h));
     const next = clone(best);
 
-    for (const r of next) {
+    for (const f of next) {
+      const r = f.ribbon;
+      const n = r.points.length;
       const wide: number[] = [];
-      const side: number[] = [];
-      for (let i = 0; i < r.points.length; i++) {
+      const dx: number[] = [];
+      const dy: number[] = [];
+      for (let i = 0; i < n; i++) {
         const [nx, ny] = normalAt(r.points, i, r.closed);
         const [px, py] = r.points[i];
         const hw = r.widths[i];
@@ -174,19 +229,27 @@ export function refine(
         const left = probe(1);
         const right = probe(-1);
         wide.push(left + right);
-        side.push(left - right);
+        // The sideways pull, already resolved into x and y so that projecting it
+        // onto the basis is one least-squares solve per coordinate.
+        const move = (left - right) * step * 0.5;
+        dx.push(move * nx);
+        dy.push(move * ny);
       }
 
-      const dW = smooth(wide);
-      const dP = smooth(side);
-      for (let i = 0; i < r.points.length; i++) {
-        const [nx, ny] = normalAt(r.points, i, r.closed);
-        r.widths[i] = Math.max(0, r.widths[i] + step * dW[i] * 0.5);
-        r.points[i] = [r.points[i][0] + step * dP[i] * 0.5 * nx, r.points[i][1] + step * dP[i] * 0.5 * ny];
+      // Least squares onto the control points: the part of what the reference
+      // asked for that this run is actually able to do.
+      const gx = fitScalar(f.m, dx);
+      const gy = fitScalar(f.m, dy);
+      const gw = fitScalar(f.m, wide.map((v) => v * step * 0.5));
+      for (let c = 0; c < f.m.k; c++) {
+        f.cx[c] += gx[c];
+        f.cy[c] += gy[c];
+        f.cw[c] += gw[c];
       }
+      evaluate(f);
     }
 
-    const got = score(reference, coverage(rasterise(svgOf(statics, next, ink, w, h), w, h)));
+    const got = score(reference, coverage(rasterise(svgOf(statics, shapes(next), ink, w, h), w, h)));
     used = round + 1;
     if (got > bestScore) {
       bestScore = got;
@@ -204,12 +267,19 @@ export function refine(
   }
 
   let moved = 0;
-  best.forEach((r, k) => r.points.forEach((p, i) => {
+  best.forEach((f, k) => f.ribbon.points.forEach((p, i) => {
     moved = Math.max(moved, Math.hypot(p[0] - ribbons[k].points[i][0], p[1] - ribbons[k].points[i][1]));
   }));
 
   return {
-    ribbons: best,
-    report: { before: before * 100, after: bestScore * 100, rounds: used, moved },
+    ribbons: shapes(best),
+    report: {
+      before: before * 100,
+      after: bestScore * 100,
+      rounds: used,
+      moved,
+      controls: best.reduce((n, f) => n + f.m.k, 0),
+      samples: best.reduce((n, f) => n + f.ribbon.points.length, 0),
+    },
   };
 }
