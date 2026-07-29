@@ -179,9 +179,9 @@ export function shapeBox(s: ShapeSpec): Box | null {
  * Points that bound a path: on-curve endpoints plus off-curve control points.
  * The control hull always contains the true curve, so this over-estimates
  * rather than under-estimates, which is the safe direction for clipping checks
- * and needs no curve subdivision. Arc parameters are skipped deliberately —
- * treating radii and flags as coordinates is how a bounding box ends up
- * spanning the entire canvas.
+ * and needs no curve subdivision. Arcs are the exception: their radii and flags
+ * are not coordinates and must never be read as any, so they get bounded
+ * exactly by `arcPoints`.
  */
 export function pathPoints(d: string): Vec2[] {
   const PARAMS: Record<string, number> = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7, z: 0 };
@@ -206,13 +206,9 @@ export function pathPoints(d: string): Vec2[] {
     if (key === 'h') { cx = rel ? cx + p[0] : p[0]; out.push([cx, cy]); }
     else if (key === 'v') { cy = rel ? cy + p[0] : p[0]; out.push([cx, cy]); }
     else if (key === 'a') {
-      // Skip rx, ry, rotation and both flags; keep the endpoint, padded by the
-      // radii so the arc's bulge cannot escape the box.
-      const [rx, ry] = p;
       const ex = rel ? cx + p[5] : p[5];
       const ey = rel ? cy + p[6] : p[6];
-      out.push([Math.min(cx, ex) - Math.abs(rx), Math.min(cy, ey) - Math.abs(ry)]);
-      out.push([Math.max(cx, ex) + Math.abs(rx), Math.max(cy, ey) + Math.abs(ry)]);
+      out.push(...arcPoints(cx, cy, p[0], p[1], p[2], p[3] !== 0, p[4] !== 0, ex, ey));
       cx = ex; cy = ey;
     } else {
       for (let k = 0; k + 1 < n; k += 2) {
@@ -223,6 +219,74 @@ export function pathPoints(d: string): Vec2[] {
       cx = rel ? cx + p[n - 2] : p[n - 2];
       cy = rel ? cy + p[n - 1] : p[n - 1];
       if (key === 'm') { sx = cx; sy = cy; cmd = rel ? 'l' : 'L'; }
+    }
+  }
+  return out;
+}
+
+/**
+ * Exact bounds of an SVG elliptical arc: both endpoints, plus whichever of the
+ * four axis extremes the sweep actually passes through.
+ *
+ * The cheap approximation — pad the endpoints by the radii — is wrong by two
+ * whole radii, so a ring drawn as one big arc reports a box several times its
+ * real size and trips `out-of-view` on artwork that never leaves the frame.
+ * Converting to centre parameterisation costs twenty lines and is exact.
+ */
+function arcPoints(
+  x1: number, y1: number,
+  rxIn: number, ryIn: number, phiDeg: number,
+  large: boolean, sweepFlag: boolean,
+  x2: number, y2: number,
+): Vec2[] {
+  const out: Vec2[] = [[x1, y1], [x2, y2]];
+  let rx = Math.abs(rxIn);
+  let ry = Math.abs(ryIn);
+  // A zero radius means the arc degenerates to a line, which the endpoints bound.
+  if (!rx || !ry) return out;
+
+  const phi = (phiDeg * Math.PI) / 180;
+  const cosP = Math.cos(phi);
+  const sinP = Math.sin(phi);
+
+  const dx = (x1 - x2) / 2;
+  const dy = (y1 - y2) / 2;
+  const px = cosP * dx + sinP * dy;
+  const py = -sinP * dx + cosP * dy;
+
+  // Radii too small to span the endpoints are scaled up, per the SVG spec.
+  const lambda = (px * px) / (rx * rx) + (py * py) / (ry * ry);
+  if (lambda > 1) {
+    const s = Math.sqrt(lambda);
+    rx *= s;
+    ry *= s;
+  }
+
+  const den = rx * rx * py * py + ry * ry * px * px;
+  const num = rx * rx * ry * ry - den;
+  const co = den > 0 ? Math.sqrt(Math.max(0, num / den)) * (large === sweepFlag ? -1 : 1) : 0;
+  const cxp = (co * rx * py) / ry;
+  const cyp = (-co * ry * px) / rx;
+  const cx = cosP * cxp - sinP * cyp + (x1 + x2) / 2;
+  const cy = sinP * cxp + cosP * cyp + (y1 + y2) / 2;
+
+  const start = Math.atan2((py - cyp) / ry, (px - cxp) / rx);
+  const end = Math.atan2((-py - cyp) / ry, (-px - cxp) / rx);
+  let sweep = end - start;
+  if (!sweepFlag && sweep > 0) sweep -= 2 * Math.PI;
+  if (sweepFlag && sweep < 0) sweep += 2 * Math.PI;
+
+  const at = (t: number): Vec2 => [
+    cx + rx * Math.cos(t) * cosP - ry * Math.sin(t) * sinP,
+    cy + rx * Math.cos(t) * sinP + ry * Math.sin(t) * cosP,
+  ];
+
+  // Angles where the arc is momentarily vertical (dx/dt = 0) or horizontal.
+  for (const base of [Math.atan2(-ry * sinP, rx * cosP), Math.atan2(ry * cosP, rx * sinP)]) {
+    for (const t of [base, base + Math.PI]) {
+      let d = (t - start) % (2 * Math.PI);
+      if (d < 0) d += 2 * Math.PI;
+      if (Math.abs(sweep >= 0 ? d : d - 2 * Math.PI) <= Math.abs(sweep)) out.push(at(t));
     }
   }
   return out;

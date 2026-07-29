@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  character, part, limb, ellipse, circle, keys, sampled,
+  character, part, limb, ellipse, circle, path, keys, sampled,
   compile, evaluate, pointAt, lint, renderStatic,
-  cubicBezier, linear, easeInOut, walkCycle,
+  cubicBezier, linear, easeInOut, walkCycle, partBox,
 } from '../src/index.ts';
 import { crane } from '../examples/crane.ts';
 
@@ -157,6 +157,51 @@ test('knee flexion is solved from geometry, not copied between characters', () =
     return Math.max(...ch.keys.map((k) => k.v));
   };
   assert.ok(peakOf(shortLeg.shin) > peakOf(longLeg.shin), 'shorter shin needs a bigger knee break');
+});
+
+test('facing mirrors every joint, so a left-facing character walks forward', () => {
+  // No lint can catch this one: a gait run against the artwork's facing still
+  // holds a perfectly constant contact speed, it just travels backwards.
+  const right = walkCycle({ reach: 14, segments: [30, 30] });
+  const left = walkCycle({ reach: 14, segments: [30, 30], facing: -1 });
+  const at = (tr: ReturnType<typeof walkCycle>['thigh']) =>
+    tr.rotate as Extract<typeof tr.rotate, { kind: 'keys' }>;
+
+  for (const joint of ['thigh', 'shin', 'foot'] as const) {
+    const a = at(right[joint]).keys;
+    const b = at(left[joint]).keys;
+    assert.equal(a.length, b.length, `${joint} keeps its keyframe count`);
+    a.forEach((k, i) => {
+      assert.equal(b[i].t, k.t, `${joint} keeps its timing`);
+      assert.equal(b[i].v, -k.v, `${joint} angle is mirrored`);
+    });
+  }
+});
+
+test('the left-facing logo walks the way it points', async () => {
+  const { tenfore } = await import('../examples/tenfore.ts');
+  assert.deepEqual(lint(tenfore), []);
+  // Beak points left, so the planted foot must track right, against travel.
+  const [x0] = pointAt(tenfore, 'legNear.foot', 0);
+  const [x1] = pointAt(tenfore, 'legNear.foot', 0.5);
+  assert.ok(x1 > x0, `contact must track forward, got ${x0.toFixed(1)} -> ${x1.toFixed(1)}`);
+});
+
+test('a big arc is bounded by its own extent, not padded by its radii', () => {
+  // Padding endpoints by the radii — the cheap approximation — makes a ring
+  // report a box two radii too big and trips out-of-view on clean artwork.
+  const r = 100;
+  const scene = character('t', { viewBox: [0, 0, 300, 300] }, () => {
+    part('ring', { pivot: [150, 150] }, () => {
+      path({ d: `M250,150 A${r},${r} 0 1 1 50,150`, stroke: '#000', width: 2 });
+    });
+  });
+  const box = partBox(scene, 'ring', 0)!;
+  // Sweeping positive from 0 to 180 degrees traces the LOWER half of a circle
+  // centred at (150,150). So the extreme at 90 degrees must be found, the one
+  // at 270 must not, and naive radius padding would report 50..350 on both axes.
+  assert.ok(Math.abs(box.x0 - 50) < 1.5 && Math.abs(box.x1 - 250) < 1.5, `x ${box.x0}..${box.x1}`);
+  assert.ok(Math.abs(box.y0 - 150) < 1.5 && Math.abs(box.y1 - 250) < 1.5, `y ${box.y0}..${box.y1}`);
 });
 
 test('the crane example is clean and compiles to a self-contained file', () => {

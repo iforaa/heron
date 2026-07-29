@@ -70,6 +70,20 @@ export interface WalkOptions {
   /** When the knee reaches peak flexion. Defaults to just after push-off. */
   peak?: number;
   /**
+   * Which way the character faces: `1` for right, `-1` for left. Default `1`.
+   *
+   * A gait is a set of angles, and angles do not survive a change of facing.
+   * Drive a left-facing character with the default and every joint is mirrored:
+   * the planted foot tracks toward the head instead of away from it, so the
+   * character moonwalks. It reads as *wrong* immediately and as *why* almost
+   * never, and no lint can catch it — the foot is still moving at a perfectly
+   * constant speed, just in the direction of travel instead of against it.
+   *
+   * This mirrors the motion, not the drawing. The artwork must already face the
+   * way you claim, and an asymmetric foot has to be drawn mirrored too.
+   */
+  facing?: 1 | -1;
+  /**
    * When knee extension finishes, if it should not finish at `settle`. Separate
    * because a character with a long foot relative to its stride needs the leg
    * straight *before* the thigh reaches its forward extreme, or unwinding the
@@ -99,6 +113,13 @@ function solveLift(segments?: [number, number], clearance?: number): number | un
   const ratio = 1 - want / shin;
   const deg = ratio <= -1 ? 180 : (Math.acos(Math.max(-1, Math.min(1, ratio))) * 180) / Math.PI;
   return Math.max(20, Math.min(75, deg));
+}
+
+/** Mirrors a rotation channel, which is all it takes to turn a gait around. */
+function mirror(c: Channel): Channel {
+  return c.kind === 'keys'
+    ? { kind: 'keys', keys: c.keys.map((k) => ({ ...k, v: -k.v })) }
+    : { kind: 'fn', fn: (t) => -c.fn(t), samples: c.samples };
 }
 
 /**
@@ -140,7 +161,7 @@ export function walkCycle(o: WalkOptions = {}): WalkTracks {
   // Rule 2: whatever the leg above is doing, the sole stays flat.
   const flatSole = (thigh: number, knee: number) => -(thigh + knee);
 
-  return {
+  const tracks: WalkTracks = {
     // One linear segment across the whole of stance (rule 1), an eased swing,
     // then the retraction into touchdown (rule 3).
     thigh: {
@@ -178,6 +199,13 @@ export function walkCycle(o: WalkOptions = {}): WalkTracks {
         [1, flatSole(thighAt(0), contactKnee)],
       ]),
     },
+  };
+
+  if ((o.facing ?? 1) === 1) return tracks;
+  return {
+    thigh: { rotate: mirror(tracks.thigh.rotate!) },
+    shin: { rotate: mirror(tracks.shin.rotate!) },
+    foot: { rotate: mirror(tracks.foot.rotate!) },
   };
 }
 

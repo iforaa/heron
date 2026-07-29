@@ -119,6 +119,24 @@ walkCycle({ segments: [13, 13], clearance: 4 })   // short-legged rodent
 walkCycle({ segments: [36, 32] })                 // clearance defaults to 15% of leg length
 ```
 
+### A gait has a direction, and no lint can check it
+
+`walkCycle` produces angles for a character facing **right**. Drive a
+left-facing one with them and every joint is mirrored: the planted foot tracks
+toward the head instead of away from it, so the character moonwalks and its
+knees bend the wrong way.
+
+Nothing catches this for you. `foot-slip` only asks whether a planted contact
+holds a constant speed — a backwards walk holds it perfectly. So check which way
+the artwork points and say so:
+
+```ts
+walkCycle({ segments: [175, 172], facing: -1 })   // beak points left
+```
+
+This mirrors the motion, not the drawing: the artwork must already face that
+way, and an asymmetric foot has to be drawn mirrored too.
+
 Other options worth knowing when a gait misbehaves:
 
 - `stance` — fraction of the cycle the foot is down. Above 0.5 gives the
