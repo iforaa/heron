@@ -16,12 +16,13 @@
  *   - THE TUCK IS A POSE, NOT ANATOMY. The mark shows a heron standing on one
  *     leg with the other drawn up. A one-legged bird cannot walk, so the second
  *     leg is the measured leg again, shifted across the body and tinted back.
- *     The run that drew the tucked shin (s8) is dropped: the leg it belonged to
- *     now exists properly.
  *
- *   - THE PLANT STAYS ON THE FLOOR. The leaf below left is scenery, not part of
- *     the bird, so it stays in a static layer and never bobs. Nesting it under
- *     `body` would have it bounce along with the stride, which reads as jelly.
+ *   - AND THE TUCKED LEG GOES WITH IT. Every run that drew it is dropped — the
+ *     shin (s8) and the folded pod below it (s7, s10, s11, s15, s17, s18), which
+ *     is the thigh doubled back with the toes inside. It looks like a leaf, and
+ *     leaving it in gave the bird a third leg standing frozen while the other
+ *     two walked. A pose has to be removed whole; half of one is scenery that
+ *     never agrees with the motion.
  *
  * Joints are measured, not guessed. The hip and knee sit on forks that `trace`
  * reported at (509, 579) and (504, 738), and the floor is the lowest ink in the
@@ -29,7 +30,7 @@
  */
 
 import {
-  character, layer, part, ribbon, path, arc,
+  character, part, ribbon, path,
   walkCycle, bodyBob, sway, applyGait,
   type Character, type Vec2,
 } from '../src/index.ts';
@@ -95,58 +96,6 @@ export const tenforeWalk: Character = character(
   // bird actually occupies.
   { viewBox: [215, 18, 589, 981], duration: 1.25, ground: GROUND },
   () => {
-    // Scenery: on the floor, not on the bird. Outside `body`, so the bob cannot
-    // reach it.
-    layer('frame', () => {
-      ribbon([
-        [432.6, 803], [430.4, 803.4], [422, 806.7], [418.1, 809.6], [417.2, 810.4], [413.5, 814.9],
-        [409.9, 821.8], [408.9, 824.5], [404.7, 839.1], [399.7, 861.8], [398.9, 866.1], [397.9, 874],
-        [397.6, 881], [399.7, 893.8], [401, 896.8], [402.8, 899.5], [406.7, 903.6], [411.8, 906.1],
-        [414, 906.5], [417.5, 906.6], [420.1, 906.1], [424, 904.7], [426.1, 903.6], [427.1, 903],
-        [435.3, 896], [437.4, 893.5], [439.1, 891.4], [440.6, 889.4],
-      ], [
-        21.7, 21.3, 19.6, 18.9, 18.7, 18.1,
-        17.5, 17.4, 17.3, 17.9, 18.1, 18.5,
-        18.8, 19.2, 19.2, 19.2, 19.1, 18.9,
-        18.8, 18.7, 18.6, 18.4, 18.3, 18.2,
-        17.9, 17.8, 17.7, 17.6,
-      ], { fill: INK });
-
-      ribbon([
-        [504, 737.8], [501.8, 738.3], [496.7, 739.7], [490.8, 741.6], [488, 742.7], [486.7, 743.2],
-        [483.9, 744.4], [482.1, 745.3], [480.9, 745.9], [478.9, 746.9], [476.1, 748.4], [464.7, 755.8],
-        [441.3, 781.9], [440.2, 783.9], [439.6, 785.1], [438.7, 786.8], [435, 795.3], [434, 798.3],
-        [433.3, 800.4], [432.8, 802.2], [432.2, 804.5],
-      ], [
-        22, 21.4, 20.3, 19.1, 18.7, 18.5,
-        18, 17.8, 17.6, 17.4, 17, 16.2,
-        17.9, 18.2, 18.4, 18.6, 20.1, 20.6,
-        21.1, 21.4, 21.9,
-      ], { fill: INK });
-
-      ribbon([
-        [434.3, 802.2], [439.6, 809.1], [440.1, 809.7], [444.4, 816.2], [445.1, 817.4], [453.5, 835.4],
-        [456.7, 847.8], [456.8, 849.2], [457.3, 855], [457.3, 855.9], [457.3, 857.2], [457.2, 860],
-        [457.1, 861.3], [456.6, 864.9], [456.4, 866.2], [455.4, 869.9], [454.9, 871.5], [454.1, 873.3],
-        [453.8, 874.2], [452, 877.7], [450.4, 880.2],
-      ], [
-        21.2, 20, 19.9, 19.1, 18.9, 17.6,
-        17.3, 17.2, 17.2, 17.2, 17.2, 17.2,
-        17.2, 17.3, 17.3, 17.4, 17.4, 17.5,
-        17.5, 17.6, 17.7,
-      ], { fill: INK });
-
-      ribbon([
-        [425.8, 870], [425.2, 876.1], [425.5, 878], [427.1, 881.6], [437, 890],
-      ], [
-        2.3, 2.4, 3.1, 5.3, 16.5,
-      ], { fill: INK });
-
-      path({ d: 'M 439 857 c 1 2 1 4 1 5 -1 3 -4 2 -5 -1 -1 -4 -2 -1 -2 6 l -1 7 4 2 c 3 1 3 1 5 -1 4 -3 6 -12 4 -16 -1 -1 -2 -3 -4 -4 l -3 -2 1 4 z', fill: INK });
-
-      path({ d: 'M 424 862 c -1 1 -1 4 -1 6 0 3 0 3 2 2 1 -2 2 -3 1 -5 -1 -4 -2 -5 -2 -3 z', fill: INK });
-    });
-
     part('body', { pivot: [500, 470] }, () => {
       // Behind the torso, so it reads as the far side.
       leg('legFar', FAR, ACROSS, BEHIND);
