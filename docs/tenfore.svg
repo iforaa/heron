@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="110 30 800 970" width="400" height="485" role="img" aria-label="tenfore">
+  <title>tenfore</title>
+  <style>
+    .h-body, .h-body-legFar-thigh, .h-body-legFar-thigh-shin, .h-body-legFar-thigh-shin-foot, .h-body-neck, .h-body-neck-head, .h-body-legNear-thigh, .h-body-legNear-thigh-shin, .h-body-legNear-thigh-shin-foot { transform-box: view-box; }
+    .h-body { transform-origin: 500px 470px; animation: kf-body 1.25s linear infinite; }
+    .h-body-legFar-thigh { transform-origin: 556px 583px; animation: kf-body-legFar-thigh 1.25s linear -0.625s infinite; }
+    .h-body-legFar-thigh-shin { transform-origin: 556px 758px; animation: kf-body-legFar-thigh-shin 1.25s linear -0.625s infinite; }
+    .h-body-legFar-thigh-shin-foot { transform-origin: 556px 930px; animation: kf-body-legFar-thigh-shin-foot 1.25s linear -0.625s infinite; }
+    .h-body-neck { transform-origin: 352px 400px; animation: kf-body-neck 1.25s linear infinite; }
+    .h-body-neck-head { transform-origin: 412px 204px; animation: kf-body-neck-head 1.25s linear infinite; }
+    .h-body-legNear-thigh { transform-origin: 500px 588px; animation: kf-body-legNear-thigh 1.25s linear infinite; }
+    .h-body-legNear-thigh-shin { transform-origin: 500px 763px; animation: kf-body-legNear-thigh-shin 1.25s linear infinite; }
+    .h-body-legNear-thigh-shin-foot { transform-origin: 500px 935px; animation: kf-body-legNear-thigh-shin-foot 1.25s linear infinite; }
+    @keyframes kf-body {
+      0% { transform: translate(0px, 4.447px); }
+      31% { transform: translate(0px, -4.447px); }
+      62% { transform: translate(0px, 4.447px); }
+      81% { transform: translate(0px, -4.447px); }
+      100% { transform: translate(0px, 4.447px); }
+    }
+    @keyframes kf-body-legFar-thigh {
+      0% { transform: rotate(13deg); }
+      62% { transform: rotate(-13deg); animation-timing-function: cubic-bezier(0.4,0,0.45,1); }
+      94% { transform: rotate(15.516deg); }
+      100% { transform: rotate(13deg); }
+    }
+    @keyframes kf-body-legFar-thigh-shin {
+      0% { transform: rotate(-3deg); }
+      62% { transform: rotate(-6deg); animation-timing-function: cubic-bezier(0.5,0,0.7,1); }
+      66% { transform: rotate(-22deg); animation-timing-function: cubic-bezier(0.3,0,0.5,1); }
+      80% { transform: rotate(-40.903deg); animation-timing-function: cubic-bezier(0.3,0,0.5,1); }
+      94% { transform: rotate(-3deg); }
+      100% { transform: rotate(-3deg); }
+    }
+    @keyframes kf-body-legFar-thigh-shin-foot {
+      0% { transform: rotate(-10deg); }
+      62% { transform: rotate(19deg); animation-timing-function: cubic-bezier(0.5,0,0.7,1); }
+      66% { transform: rotate(20deg); animation-timing-function: cubic-bezier(0.3,0,0.5,1); }
+      80% { transform: rotate(18deg); animation-timing-function: cubic-bezier(0.3,0,0.5,1); }
+      94% { transform: rotate(-12.516deg); }
+      100% { transform: rotate(-10deg); }
+    }
+    @keyframes kf-body-neck {
+      0% { transform: rotate(2deg); }
+      31% { transform: rotate(-1.4deg); }
+      62% { transform: rotate(2deg); }
+      81% { transform: rotate(-1.4deg); }
+      100% { transform: rotate(2deg); }
+    }
+    @keyframes kf-body-neck-head {
+      0% { transform: rotate(-1.5deg); }
+      31% { transform: rotate(1.05deg); }
+      62% { transform: rotate(-1.5deg); }
+      81% { transform: rotate(1.05deg); }
+      100% { transform: rotate(-1.5deg); }
+    }
+    @keyframes kf-body-legNear-thigh {
+      0% { transform: rotate(13deg); }
+      62% { transform: rotate(-13deg); animation-timing-function: cubic-bezier(0.4,0,0.45,1); }
+      94% { transform: rotate(15.516deg); }
+      100% { transform: rotate(13deg); }
+    }
+    @keyframes kf-body-legNear-thigh-shin {
+      0% { transform: rotate(-3deg); }
+      62% { transform: rotate(-6deg); animation-timing-function: cubic-bezier(0.5,0,0.7,1); }
+      66% { transform: rotate(-22deg); animation-timing-function: cubic-bezier(0.3,0,0.5,1); }
+      80% { transform: rotate(-40.903deg); animation-timing-function: cubic-bezier(0.3,0,0.5,1); }
+      94% { transform: rotate(-3deg); }
+      100% { transform: rotate(-3deg); }
+    }
+    @keyframes kf-body-legNear-thigh-shin-foot {
+      0% { transform: rotate(-10deg); }
+      62% { transform: rotate(19deg); animation-timing-function: cubic-bezier(0.5,0,0.7,1); }
+      66% { transform: rotate(20deg); animation-timing-function: cubic-bezier(0.3,0,0.5,1); }
+      80% { transform: rotate(18deg); animation-timing-function: cubic-bezier(0.3,0,0.5,1); }
+      94% { transform: rotate(-12.516deg); }
+      100% { transform: rotate(-10deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .h-body, .h-body-legFar-thigh, .h-body-legFar-thigh-shin, .h-body-legFar-thigh-shin-foot, .h-body-neck, .h-body-neck-head, .h-body-legNear-thigh, .h-body-legNear-thigh-shin, .h-body-legNear-thigh-shin-foot { animation: none; }
+    }
+  </style>
+  <g >
+    <g class="h-frame">
+      <path d="M544.5,783.6 A361,361 0 0 1 300.8,131.9" stroke="#37995d" fill="none" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M401.4,80.7 A361,361 0 0 1 698.9,733.4" stroke="#37995d" fill="none" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g class="h-body">
+      <g class="h-body-legFar">
+        <g class="h-body-legFar-thigh">
+          <line x1="556" y1="583" x2="556" y2="758" stroke="#8fc7a8" fill="none" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+          <g class="h-body-legFar-thigh-shin">
+            <line x1="556" y1="758" x2="556" y2="930" stroke="#8fc7a8" fill="none" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+            <g class="h-body-legFar-thigh-shin-foot">
+              <ellipse cx="556" cy="945" rx="62" ry="16" fill="#8fc7a8"/>
+            </g>
+          </g>
+        </g>
+      </g>
+      <path d="M368,378 C420,338 500,336 566,376 C632,416 682,500 706,606" stroke="#37995d" fill="none" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M336,432 C318,486 340,540 396,566 C452,590 546,592 662,574" stroke="#37995d" fill="none" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M402,410 C432,486 494,540 578,562" stroke="#37995d" fill="none" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+      <g class="h-body-neck">
+        <path d="M336,432 C300,380 292,320 306,262 C316,220 334,182 352,158" stroke="#37995d" fill="none" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M368,382 C350,328 348,276 368,234 C380,208 398,196 414,202" stroke="#37995d" fill="none" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+        <g class="h-body-neck-head">
+          <path d="M390,130 C424,94 460,114 456,158 C452,198 428,212 410,206" stroke="#37995d" fill="none" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M247,54 C290,66 340,96 384,134 L358,172 C318,138 276,98 247,54 Z" fill="#37995d"/>
+        </g>
+      </g>
+      <g class="h-body-legNear">
+        <g class="h-body-legNear-thigh">
+          <line x1="500" y1="588" x2="500" y2="763" stroke="#37995d" fill="none" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+          <g class="h-body-legNear-thigh-shin">
+            <line x1="500" y1="763" x2="500" y2="935" stroke="#37995d" fill="none" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+            <g class="h-body-legNear-thigh-shin-foot">
+              <ellipse cx="500" cy="950" rx="62" ry="16" fill="#37995d"/>
+            </g>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>
