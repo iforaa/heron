@@ -78,6 +78,7 @@ function num(v: unknown, d: number): number {
 const USAGE = `heron - compile character animation into a self-contained animated SVG
 
   heron trace    <image.png> [-o scene.ts] [--epsilon 1.2] [--threshold 0.22]
+                 [--fit 1.5] [--ribbons all|taper|none]
   heron match    <scene.ts> <reference.png> [-o overlay.png] [-t 0]
   heron snapshot <scene.ts> [-t 0.4] [-o frame.png] [-w 520] [--svg]
   heron sheet    <scene.ts> [-n 8] [-o sheet.png] [--cols 4] [--svg]
@@ -106,6 +107,8 @@ async function main(): Promise<void> {
       threshold: num(args.threshold, 0.22),
       minBranch: num(args.minBranch, 6),
       name: args.name ? String(args.name) : undefined,
+      fit: num(args.fit, 1.5),
+      ribbons: args.ribbons ? (String(args.ribbons) as 'taper' | 'all' | 'none') : undefined,
       out: basename(out),
       importFrom: existsSync(resolve('node_modules/@heron/core')) ? '@heron/core' : (rel.startsWith('.') ? rel : `./${rel}`),
     });
@@ -116,15 +119,19 @@ async function main(): Promise<void> {
       console.log(`  measured widths: ${[...new Set(w.map((v) => v.toFixed(0)))].sort((a, b) => +a - +b).join(', ')} px`);
     }
     const bends = res.strokes.filter((s) => s.corners.length).length;
+    if (res.profiled) {
+      console.log(`  ${res.profiled} run(s) carry a measured width at every point, so a taper is drawn as`);
+      console.log(`    measured rather than flattened to one number - and keeps its centreline`);
+    }
     if (res.outlined) {
-      console.log(`  ${res.outlined} filled shape(s) traced to exact outlines by potrace, not approximated as strokes`);
+      console.log(`  ${res.outlined} blob(s) with no centreline to measure were traced as outlines by potrace`);
     }
     if (res.fitted) {
       console.log(`  ${res.fitted} run(s) were really a circle or a line, and are emitted as one - fitted over every`);
       console.log(`    sample, so they are more accurate than the points they replace, not just shorter`);
     }
-    if (res.varying - res.outlined > 0) {
-      console.log(`  ! ${res.varying - res.outlined} run(s) taper but could not be outlined - still emitted as constant-width strokes`);
+    if (res.varying && !res.profiled && !res.outlined) {
+      console.log(`  ! ${res.varying} run(s) taper but were emitted at one width - pass --ribbons all`);
     }
     if (bends) {
       console.log(`  ! ${bends} run(s) turn a sharp corner - each may be two parts traced as one`);

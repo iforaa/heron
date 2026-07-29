@@ -339,6 +339,12 @@ export function skeletonise(mask: Mask): Mask {
 export interface Stroke {
   /** Centreline, in image pixel coordinates. */
   points: Vec2[];
+  /**
+   * Measured half-width at each of `points`. This is the honest form of the
+   * measurement — a pen leaves a ribbon, not a line with one number attached —
+   * and `width` below is its summary, useful only where it barely varies.
+   */
+  widths: number[];
   /** Median stroke width in pixels, measured from the distance field. */
   width: number;
   /** Ratio of the widest to narrowest measurement along the run. */
@@ -661,7 +667,13 @@ function joinRuns(runs: Vec2[][]): Vec2[][] {
 
 /** Douglas-Peucker on a polyline: the fewest points that stay within `epsilon`. */
 export function simplify(points: Vec2[], epsilon: number): Vec2[] {
-  if (points.length < 3) return points.slice();
+  const keep = simplifyIndices(points, epsilon);
+  return keep.map((i) => points[i]);
+}
+
+/** The same, as indices, so a parallel array can be sampled at the same places. */
+export function simplifyIndices(points: Vec2[], epsilon: number): number[] {
+  if (points.length < 3) return points.map((_, i) => i);
   const keep = new Uint8Array(points.length);
   keep[0] = 1;
   keep[points.length - 1] = 1;
@@ -688,7 +700,28 @@ export function simplify(points: Vec2[], epsilon: number): Vec2[] {
       stack.push([lo, at], [at, hi]);
     }
   }
-  return points.filter((_, i) => keep[i]);
+  const out: number[] = [];
+  for (let i = 0; i < points.length; i++) if (keep[i]) out.push(i);
+  return out;
+}
+
+/**
+ * Where to sample a run so that both its path and its width survive.
+ *
+ * Simplifying on position alone is what makes a width profile useless: a beak is
+ * a straight line that happens to narrow along its length, so every interior
+ * point is redundant *as geometry* and Douglas-Peucker keeps only the two ends —
+ * discarding the taper it was measured to carry. Running the same simplification
+ * over the width, as a curve of radius against distance along the run, keeps the
+ * points where the width turns instead. The union describes both.
+ *
+ * For a stroke of constant width the width curve is flat and contributes only
+ * its endpoints, so nothing changes for the ordinary case.
+ */
+function sampleAt(points: Vec2[], radii: number[], epsilon: number): number[] {
+  const byShape = simplifyIndices(points, epsilon);
+  const byWidth = simplifyIndices(radii.map((r, i): Vec2 => [i, r]), epsilon);
+  return [...new Set([...byShape, ...byWidth])].sort((a, b) => a - b);
 }
 
 function polylineLength(p: Vec2[]): number {
@@ -759,8 +792,19 @@ function refineRidge(
     // blob, a saddle at a fork — has no peak to snap to, so the point stays put.
     if (curve < -1e-6) {
       const s = Math.max(-0.7, Math.min(0.7, (rm - rp) / (2 * curve)));
+      /**
+       * The radius is read off the parabola at the point actually moved to,
+       * rather than at its unclamped vertex.
+       *
+       * They are the same wherever the ridge is a real peak, and wildly
+       * different where it is nearly flat: the closed-form vertex height divides
+       * by the curvature, so a curvature of -1e-6 returns a radius of thousands
+       * of pixels. That never showed while radii were only fed to medians and
+       * percentiles, which discard outliers by construction. It surfaced the
+       * moment each radius had to draw an edge on its own.
+       */
       points.push([px + s * nx, py + s * ny]);
-      radii.push(r0 - ((rp - rm) * (rp - rm)) / (8 * curve));
+      radii.push(Math.max(0, r0 + ((rp - rm) / 2) * s + (curve / 2) * s * s));
     } else {
       points.push([px, py]);
       radii.push(r0);
@@ -917,6 +961,18 @@ export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6, skeleton?: Mas
        * what let genuine tapers pass as constant-width strokes.
        */
       const skip = Math.min(Math.ceil(median(radii)), Math.floor(radii.length / 3));
+
+      /**
+       * The profile is used exactly as measured, including where it narrows into
+       * a cap, and that is a measured decision rather than an obvious one.
+       *
+       * A medial axis stops short of a tip and thinning erodes it further, so
+       * the last samples plausibly describe the cap rather than the stroke —
+       * which argues for flattening them back to the run's own width. Tried:
+       * it moves the ink ratio the right way, from 0.981 to 0.987, and moves the
+       * overlap the wrong way, from 94.1% to 93.9%. The ink it adds lands where
+       * the reference does not have any. The narrowing is real, so it stays.
+       */
       const cut = radii.slice(skip, radii.length - skip);
       const ws = (cut.length ? cut : radii).map((v) => v * 2);
       const mid = median(ws);
@@ -970,9 +1026,11 @@ export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6, skeleton?: Mas
         });
       }
 
-      const points = simplify(ridge, epsilon);
+      const keep = sampleAt(ridge, radii, epsilon);
+      const points = keep.map((i) => ridge[i]);
       return {
         points,
+        widths: keep.map((i) => radii[i]),
         width: Math.round(mid * 10) / 10,
         widthVariation: lo > 0 ? Math.round((hi / lo) * 100) / 100 : 1,
         length: Math.round(polylineLength(raw)),

@@ -15,6 +15,8 @@ export {
   arcPath,
   through,
   curvePath,
+  ribbon,
+  ribbonPath,
   activeChannels,
   CHANNELS,
   NEUTRAL,
@@ -23,7 +25,7 @@ export {
 } from './scene.ts';
 export type {
   Vec2, ViewBox, Track, Channel, ChannelName, Node,
-  CharacterOptions, PartOptions, LimbOptions, ArcOptions, CurveOptions,
+  CharacterOptions, PartOptions, LimbOptions, ArcOptions, CurveOptions, RibbonOptions,
 } from './scene.ts';
 
 export { linear, ease, easeIn, easeOut, easeInOut, glide, push, swing, cubicBezier, steps } from './easing.ts';

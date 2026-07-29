@@ -44,6 +44,12 @@ export interface TraceOptions {
    * point list. Set to 0 to always emit point lists.
    */
   fit?: number;
+  /**
+   * When to emit a measured width profile rather than a single width.
+   * `taper` only where the width genuinely varies, `all` everywhere a run has a
+   * centreline, `none` never.
+   */
+  ribbons?: 'taper' | 'all' | 'none';
 }
 
 export interface TraceResult {
@@ -60,6 +66,8 @@ export interface TraceResult {
   outlined: number;
   /** Runs that turned out to be a circle or a straight line. */
   fitted: number;
+  /** Runs emitted with a measured width profile rather than a single width. */
+  profiled: number;
 }
 
 /** Above this, a run is tapering rather than holding one width. */
@@ -145,13 +153,18 @@ function n1(v: number): string {
   return String(Math.round(v * 10) / 10);
 }
 
-function pointList(pts: Vec2[], scale: number): string {
-  const p = pts.map(([x, y]) => `[${n1(x / scale)}, ${n1(y / scale)}]`);
-  // One long line is unreadable and one point per line is unreviewable; six is
-  // about the width of a sensible editor.
+/**
+ * One long line is unreadable and one item per line is unreviewable; six is
+ * about the width of a sensible editor.
+ */
+function wrap(items: string[], perRow = 6): string {
   const rows: string[] = [];
-  for (let i = 0; i < p.length; i += 6) rows.push(`      ${p.slice(i, i + 6).join(', ')}`);
+  for (let i = 0; i < items.length; i += perRow) rows.push(`      ${items.slice(i, i + perRow).join(', ')}`);
   return rows.join(',\n');
+}
+
+function pointList(pts: Vec2[], scale: number): string {
+  return wrap(pts.map(([x, y]) => `[${n1(x / scale)}, ${n1(y / scale)}]`));
 }
 
 /** The extent of a point list, by one pass rather than four spreads. */
@@ -192,17 +205,25 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
   const self = o.out ?? 'scene.ts';
 
   /**
-   * Tapering regions get an exact outline instead of a fudged constant width.
-   * Each is traced on its own so it stays one shape and one part; tracing them
-   * together would fuse touching shapes back into a single path, which is the
-   * whole reason an outline tracer cannot import a drawing by itself.
+   * What is left for an outline tracer, now that width can vary.
+   *
+   * Very little. A tapering run used to have to be handed to potrace, because a
+   * constant width could not describe it — and what came back was a boundary
+   * with the centreline thrown away, so the shape could be moved but never
+   * posed. A ribbon describes the same taper from the measurement itself and
+   * keeps the centreline, so that trade is no longer necessary.
+   *
+   * An outline is still right for a blob: a mark with no meaningful centreline
+   * at all, where the medial axis is a dot or a star rather than a path. Those
+   * have nothing for a ribbon to be a ribbon along.
    */
   const useOutlines = (o.outlines ?? true) && hasPotrace();
-  const label = useOutlines ? labelRegions(mask, found) : null;
+  const blob = (k: Stroke) => k.points.length < 4 || k.length < k.width * 2;
+  const label = useOutlines && found.some(blob) ? labelRegions(mask, found) : null;
   const outline = new Map<number, string>();
   if (label) {
-    found.forEach((_, i) => {
-      if (!tapering[i]) return;
+    found.forEach((k, i) => {
+      if (!blob(k)) return;
       const paths = outlinePaths(maskOfRegions(mask, label, new Set([i])));
       // A region can come back as several contours — separate blobs, or a shape
       // with a hole. They are still one part, and potrace winds them so nonzero
@@ -260,22 +281,14 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
   const body = found.map((k, i) => {
     const box = `[${bounds(k.points, s).map(Math.round).join(' ')}]`;
 
-    // A tapering region that potrace could resolve is emitted as its true
-    // outline, so it is exact rather than approximated by one width.
     const traced = outline.get(i);
     if (traced) {
       used.add('path');
       return `    // s${i}  box ${box}  length ${Math.round(k.length / s)}px\n`
-        + `    //   filled shape: width varied ${k.widthVariation}x, so this is its exact\n`
-        + `    //   outline rather than a constant-width stroke.\n`
+        + `    //   a filled blob with no centreline to measure, so this is its traced outline.\n`
         + `    path({ d: '${traced}', fill: INK });`;
     }
 
-    const taper = tapering[i]
-      ? `\n    // ! width varies ${k.widthVariation}x along this run: probably a filled shape,`
-        + `\n    //   not a stroke, and no outline tracer was available to resolve it.`
-        + `\n    //   Install potrace and re-run, or redraw it with path({ d }) by hand.`
-      : '';
     const bends = k.corners.length
       ? `\n    // ! turns sharply at ${k.corners.map((c) => `(${Math.round(c[0] / s)}, ${Math.round(c[1] / s)})`).join(' ')}`
         + `\n    //   A drawn stroke curves; a hard corner usually means two things were`
@@ -288,10 +301,26 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
     // A cut end rendered with a round cap bulges past the tip and leaves the
     // corners bare, so the measured cap travels with the geometry.
     const head = `    // s${i}  box ${box}  length ${Math.round(k.length / s)}px  width ${width}`
-      + `${k.cap === 'butt' ? '  cut ends' : ''}${snapped}${taper}${bends}\n`;
+      + `${k.cap === 'butt' ? '  cut ends' : ''}${snapped}${bends}\n`;
 
     const fitted = shape.get(i);
     if (fitted) return head + fitted;
+
+    /**
+     * A run whose width changes along it is emitted as what it is: a centreline
+     * with a width at every point, offset into its own outline. That is exact
+     * where one number cannot be, and unlike a traced outline it keeps the
+     * centreline, so the shape can still be posed.
+     */
+    const mode = o.ribbons ?? 'all';
+    if (mode === 'all' || (mode === 'taper' && tapering[i])) {
+      used.add('ribbon');
+      return `${head}    //   width runs ${n1(Math.min(...k.widths) * 2 / s)} to ${n1(Math.max(...k.widths) * 2 / s)}, `
+        + `so this is a measured profile rather than one number.\n`
+        + `    ribbon([\n${pointList(k.points, s)},\n    ], [\n`
+        + `${wrap(k.widths.map((r) => n1(r / s)))},\n    ], { fill: INK`
+        + `${k.cap === 'butt' ? `, cap: 'butt'` : ''}${k.closed ? ', closed: true' : ''} });`;
+    }
 
     used.add('through');
     const opts = [
@@ -376,5 +405,6 @@ export default ${name};
     joints: joints.map((j): Vec2 => [Math.round(j[0] / s), Math.round(j[1] / s)]),
     outlined: outline.size,
     fitted: shape.size,
+    profiled: (source.match(/\n {4}ribbon\(\[/g) ?? []).length,
   };
 }

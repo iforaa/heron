@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  type Mask, type Bitmap, distanceField, radiusField, coverage, softOverlap,
-  skeletonise, traceSkeleton, simplify, strokes, encodePng,
+  type Mask, type Bitmap, distanceField, radiusField, coverage, softOverlap, totalCoverage,
+  rasterise, ribbonPath, skeletonise, traceSkeleton, simplify, strokes, encodePng,
 } from '../src/index.ts';
 import { fitCircle, fitLine } from '../src/fit.ts';
 
@@ -228,6 +228,73 @@ test('a line is fitted without a preferred axis, so a vertical leg fits', () => 
   const bend = fitLine(hooked)!;
   assert.ok(bend.error < 1.5, `the straight part fits well on its own, residual ${bend.error.toFixed(2)}`);
   assert.ok(bend.inliers < 0.85, `but it only describes part of the run, inliers ${bend.inliers.toFixed(2)}`);
+});
+
+test('a ribbon encloses the area its width profile describes', () => {
+  // Areas, not eyeballs: each of these has a closed form, so the offsetting is
+  // either right or it is not.
+  const area = (d: string): number => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200">`
+      + `<rect width="400" height="200" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+    return totalCoverage(coverage(rasterise(svg, 400, 200)));
+  };
+  const near = (got: number, want: number, why: string) =>
+    assert.ok(Math.abs(got - want) / want < 0.01, `${why}: ${got.toFixed(0)} against ${want.toFixed(0)}`);
+
+  const bar: [number, number][] = [];
+  for (let x = 100; x <= 300; x += 10) bar.push([x, 100]);
+  const flat = bar.map(() => 20);
+
+  near(area(ribbonPath(bar, flat, { cap: 'butt' })), 200 * 40, 'a cut bar is its rectangle');
+  near(area(ribbonPath(bar, flat)), 200 * 40 + Math.PI * 400, 'a round-capped bar adds a disc');
+
+  // A width falling linearly to nothing is a triangle, plus the one cap that is
+  // still open at the wide end.
+  const wedge = bar.map((_, i) => 20 * (1 - i / (bar.length - 1)));
+  near(area(ribbonPath(bar, wedge)), 200 * 20 + Math.PI * 400 / 2, 'a taper to a point is a triangle');
+
+  // Closed, the two offsets are separate loops wound opposite ways, so a nonzero
+  // fill leaves the middle empty. Getting the winding wrong fills the disc.
+  const ring: [number, number][] = [];
+  for (let a = 0; a < 360; a += 5) {
+    ring.push([200 + 60 * Math.cos((a * Math.PI) / 180), 100 + 60 * Math.sin((a * Math.PI) / 180)]);
+  }
+  near(
+    area(ribbonPath(ring, ring.map(() => 10), { closed: true })),
+    Math.PI * (70 * 70 - 50 * 50),
+    'a closed ribbon is an annulus, not a disc',
+  );
+});
+
+test('a width profile survives simplification, and a flat one costs nothing', () => {
+  // Simplifying on position alone is what makes a profile useless: a wedge is a
+  // straight line that narrows, so every interior point is redundant as geometry
+  // and would be dropped along with the taper it carries.
+  // The profile curves, so it cannot be carried by its endpoints alone. (A
+  // straight taper legitimately can, and correctly keeps only two.)
+  const m = blank(320, 80);
+  for (let x = 40; x < 280; x++) {
+    const t = (x - 40) / 240;
+    const half = 2 + 16 * (1 - t) * (1 - t);
+    for (let y = Math.ceil(40 - half); y < 40 + half; y++) m.data[y * 320 + x] = 1;
+  }
+  const wedge = strokes(m)[0];
+  assert.equal(wedge.widths.length, wedge.points.length, 'one width per point');
+  assert.ok(
+    wedge.points.length > simplify(wedge.ridge, 1.2).length,
+    `the width turns where the shape does not, so it must add points: ` +
+    `${wedge.points.length} kept against ${simplify(wedge.ridge, 1.2).length} for the path alone`,
+  );
+  assert.ok(
+    Math.max(...wedge.widths) / Math.max(0.5, Math.min(...wedge.widths)) > 2,
+    'and those samples still describe a narrowing',
+  );
+
+  const bar = blank(320, 80);
+  hline(bar, 40, 280, 40, 21);
+  const straight = strokes(bar)[0];
+  assert.equal(straight.widths.length, straight.points.length, 'one width per point');
+  assert.ok(straight.points.length <= 4, `a flat profile adds no points, got ${straight.points.length}`);
 });
 
 test('coverage scores sub-pixel error that a threshold rounds away', () => {

@@ -357,11 +357,8 @@ export interface CurveOptions {
  * a slow loop over numbers with no visible meaning. The points here are all on
  * the curve, so they are exactly the positions you can see and correct.
  */
-export function curvePath(points: Vec2[], o: CurveOptions = {}): string {
-  if (points.length < 2) throw new Error('heron: through() needs at least two points');
-  const closed = o.closed ?? false;
-  if (points.length === 2 && !closed) return `M${xy(points[0])} L${xy(points[1])}`;
-
+/** The cubic segments of a Catmull-Rom curve, without the opening move. */
+function curveSegments(points: Vec2[], closed: boolean, tension: number): string {
   const len = points.length;
   // Open curves clamp at the ends, which makes the first and last segments bend
   // toward their neighbour instead of flicking off in an arbitrary direction.
@@ -370,14 +367,23 @@ export function curvePath(points: Vec2[], o: CurveOptions = {}): string {
 
   // Catmull-Rom in Bezier form: the tangent at a point is the direction between
   // its two neighbours, scaled by a sixth to match cubic parameterisation.
-  const k = (o.tension ?? 1) / 6;
-  let d = `M${xy(points[0])}`;
+  const k = tension / 6;
+  let d = '';
   for (let i = 0; i < (closed ? len : len - 1); i++) {
     const [p0, p1, p2, p3] = [at(i - 1), at(i), at(i + 1), at(i + 2)];
     const c1: Vec2 = [p1[0] + (p2[0] - p0[0]) * k, p1[1] + (p2[1] - p0[1]) * k];
     const c2: Vec2 = [p2[0] - (p3[0] - p1[0]) * k, p2[1] - (p3[1] - p1[1]) * k];
     d += ` C${xy(c1)} ${xy(c2)} ${xy(p2)}`;
   }
+  return d;
+}
+
+export function curvePath(points: Vec2[], o: CurveOptions = {}): string {
+  if (points.length < 2) throw new Error('heron: through() needs at least two points');
+  const closed = o.closed ?? false;
+  if (points.length === 2 && !closed) return `M${xy(points[0])} L${xy(points[1])}`;
+
+  const d = `M${xy(points[0])}${curveSegments(points, closed, o.tension ?? 1)}`;
   return closed ? `${d} Z` : d;
 }
 
@@ -387,6 +393,93 @@ export function through(points: Vec2[], o: CurveOptions & Fill & Stroke = {}): v
 
 export function polygon(o: { points: Vec2[] } & Fill & Stroke): void {
   shape('polygon', { points: o.points.map((p) => p.join(',')).join(' '), ...paint(o) });
+}
+
+// --- ribbons -----------------------------------------------------------------
+
+export interface RibbonOptions {
+  /** Join the last point back to the first, making a ring with a hole. */
+  closed?: boolean;
+  /** How the free ends are finished. A width that reaches zero needs neither. */
+  cap?: 'round' | 'butt';
+  /** 1 is a natural curve; 0 collapses to straight segments. */
+  tension?: number;
+}
+
+/** Unit normal at `i`, from the direction between the neighbouring points. */
+function normalAt(points: Vec2[], i: number, closed: boolean): Vec2 {
+  const n = points.length;
+  const at = (k: number) => (closed ? points[((k % n) + n) % n] : points[Math.max(0, Math.min(n - 1, k))]);
+  const a = at(i - 1);
+  const b = at(i + 1);
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy) || 1;
+  return [-dy / len, dx / len];
+}
+
+/**
+ * A stroke whose width is a measurement at every point rather than one number.
+ *
+ * This is what a drawn mark actually is. A pen leaves a ribbon: a path with a
+ * width that changes along it, and the two things `stroke-width` can express —
+ * one constant width, or nothing — are both approximations of that. Everything
+ * else here had to work around the gap. A tapered beak could not be a stroke at
+ * all, so it was cut off its own neck and handed to an outline tracer, which
+ * returns a boundary with no centreline left in it.
+ *
+ * Offsetting a measured centreline by a measured half-width gives the exact
+ * boundary *and* keeps the centreline, so the same shape stays riggable. The
+ * taper stops being a special case and becomes the ordinary one: a constant
+ * width is simply a profile that happens not to vary.
+ */
+export function ribbonPath(points: Vec2[], halfWidths: number[], o: RibbonOptions = {}): string {
+  if (points.length < 2) throw new Error('heron: ribbon() needs at least two points');
+  if (halfWidths.length !== points.length) {
+    throw new Error(`heron: ribbon() needs one half-width per point, got ${halfWidths.length} for ${points.length}`);
+  }
+  const closed = o.closed ?? false;
+  const tension = o.tension ?? 1;
+
+  const side = (sign: number): Vec2[] => points.map((p, i): Vec2 => {
+    const [nx, ny] = normalAt(points, i, closed);
+    return [p[0] + nx * halfWidths[i] * sign, p[1] + ny * halfWidths[i] * sign];
+  });
+  const left = side(1);
+  const right = side(-1);
+
+  // A closed ribbon is an annulus: the two offsets are separate loops, wound
+  // opposite ways so a nonzero fill leaves the middle empty.
+  if (closed) {
+    return `${curvePath(left, { closed: true, tension })} ${curvePath([...right].reverse(), { closed: true, tension })}`;
+  }
+
+  /**
+   * Both caps sweep the same way, and it is not arbitrary.
+   *
+   * The outline runs forward along one offset and back along the other, so at
+   * each end it has to cross from one side to the other *around the outside* of
+   * the tip. With the normal taken as the tangent turned a quarter turn, that
+   * crossing always runs against the direction of increasing angle, in both
+   * y-down SVG and at both ends. Half a turn is exactly the ambiguous case for
+   * the large-arc flag, which is why it can be left at 0.
+   */
+  const cap = (from: Vec2, to: Vec2, r: number): string => {
+    if (o.cap === 'butt' || r < 0.05) return ` L${xy(to)}`;
+    return ` A${n(r)},${n(r)} 0 0 0 ${xy(to)}`;
+  };
+
+  const back = [...right].reverse();
+  return `M${xy(left[0])}`
+    + curveSegments(left, false, tension)
+    + cap(left[left.length - 1], back[0], halfWidths[halfWidths.length - 1])
+    + curveSegments(back, false, tension)
+    + cap(back[back.length - 1], left[0], halfWidths[0])
+    + ' Z';
+}
+
+export function ribbon(points: Vec2[], halfWidths: number[], o: RibbonOptions & Fill = {}): void {
+  shape('path', { d: ribbonPath(points, halfWidths, o), ...paint({ fill: o.fill ?? '#000', opacity: o.opacity }) });
 }
 
 // --- limb sugar --------------------------------------------------------------
