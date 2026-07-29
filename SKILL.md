@@ -5,24 +5,88 @@ description: Use when animating an icon, character or logo as SVG - declares a r
 
 # Heron
 
-Animate a character by writing code, then **look at what you made**. Writing
-keyframes blind is why this library exists; the inspection commands are not
-optional extras, they are the workflow.
+Animate a character by writing code, then **measure and look at what you made**.
+Working blind is why this library exists; the `trace`, `match`, `sheet` and
+`lint` commands are not optional extras, they are the workflow. Every one of
+them was added after eyeballing something produced a defect nobody could see.
 
 ## The loop
 
 ```
-write scene.ts  ->  heron sheet scene.ts  ->  look at the image  ->  fix  ->  repeat
-                    heron lint scene.ts       read the findings
+GEOMETRY   heron trace icon.png -o scene.ts   ->  heron match scene.ts icon.png
+              measure it, never eyeball it         until it says "shapes line up"
+
+ANATOMY    group the strokes into jointed parts  ->  heron match again
+              this part is judgement, not pixels     the rest pose must not drift
+
+MOTION     animate  ->  heron sheet scene.ts  ->  look  ->  heron lint  ->  fix
 ```
 
-Never ship a scene you have not looked at and linted.
+Never ship a scene you have not looked at, matched and linted.
 
-## 1. Draw the character in code
+## The one mistake that matters most
 
-Do **not** trace an existing SVG or PNG into a single path. A merged path has no
-leg to rotate, which is the whole problem. Look at any reference image and
-*redraw* it as named parts:
+**Do not read coordinates off an image by eye. Measure them.**
+
+This is not a style preference, it is the most expensive error the library has
+seen. A logo redrawn by eye — three rounds of looking at renders and adjusting —
+had *every stroke in the file 17-20% too thin*. Nobody noticed, because
+"slightly narrow everywhere" is invisible to the eye and unmissable to one
+scanline. `heron match` found it in one command:
+
+```
+overlap 51.2%  ink 0.79x
+STROKE WIDTH: every stroke is about 26% too thin (0.74x).
+```
+
+Tracing the same file instead took it to 91.4% overlap and 1.00x ink, with
+widths measured to the pixel. If you have a reference image, `heron trace` it.
+If you are drawing freehand, still run `heron match` against whatever reference
+exists. A number you typed after looking at a picture is a guess.
+
+## 1. Get the geometry from the reference
+
+```bash
+heron trace icon.png -o scene.ts       # centrelines + measured widths
+heron match scene.ts icon.png          # score it, and look at match.png
+```
+
+`trace` finds the **medial axis** of the ink, so a drawn line comes back as a
+centreline plus a width — which is exactly `through(points, { stroke, width })`.
+It reports the widths it measured and flags any run whose width *varies*, since
+that is a filled shape (a tapered beak, a solid foot) and will look wrong as a
+constant-width stroke. Redraw those few by hand with `path` or `polygon`.
+
+`match` is the instrument. Grey means both, **red means the reference has ink
+you do not, blue means you invented ink**. Read `inkRatio` first — it is one
+number for systematic error and it is the one your eye cannot see. Chasing
+shape differences while every stroke is 20% thin is wasted work.
+
+Two things `trace` deliberately does not do:
+
+- **It does not find anatomy.** It hands you runs of ink, not a leg. Deciding
+  which strokes are the leg, and where the hip is, is a judgement about what the
+  drawing depicts, and nothing in the pixels carries it. That is step 2.
+- **It does not undo a pose.** If the reference shows a bird standing on one leg
+  with the other tucked, you get one leg. A walk needs two, so you must draw the
+  missing one. Poses are not anatomy.
+
+Outline tracers (vtracer, potrace) are the wrong tool here and it is worth
+knowing why: they return the two *sides* of every stroke as one closed loop, so
+you would have to take its medial axis anyway to get back to a centreline. Worse,
+a limb cut out of an outline needs a new closing edge across the joint that does
+not exist in the source — you would be authoring, not extracting. A medial axis
+already forks where a leg meets a body. Reach for an outline tracer only when the
+art is genuinely filled shapes rather than strokes.
+
+## 2. Group the strokes into parts
+
+Keep the traced numbers exactly as they are. Anything you retype by eye is a
+guess re-entering a file that had measurements in it. Re-run `heron match` when
+you are done: the rest pose must not have drifted.
+
+If you are drawing without a reference, write it out directly — the same rules
+apply:
 
 ```ts
 import { character, part, limb, ellipse, circle, path } from '@heron/core';
@@ -104,7 +168,7 @@ ring is one call.
 Long organic runs → `through`. Circles and rings → `arc`. Corners and tight
 detail → `path`.
 
-## 2. Animate
+## 3. Animate
 
 Times are fractions of one cycle, 0 to 1. A key's easing governs the segment
 that *starts* at that key.
@@ -186,12 +250,13 @@ Other options worth knowing when a gait misbehaves:
   `settle`. Needed when the foot is long relative to the stride, otherwise
   unwinding the toe tuck drives the toe into the floor.
 
-## 3. Look at it
+## 4. Look at it
 
 ```bash
 heron sheet scene.ts -n 8 -o sheet.png     # eight poses tiled - the default check
 heron snapshot scene.ts -t 0.62 -o f.png   # one pose, e.g. the push-off frame
 heron inspect scene.ts -t 0.3              # the same pose as numbers
+heron match scene.ts icon.png              # the rest pose against the reference
 heron lint scene.ts                        # defects invisible in a still frame
 heron build scene.ts -o out.svg            # the deliverable
 ```
@@ -201,7 +266,7 @@ single screenshot cannot tell you whether a walk works. `inspect` is better than
 an image when the question is geometric ("is the foot actually reaching the
 ground?") — it prints world coordinates, contact points and bounding boxes.
 
-## 4. Fix what lint reports
+## 5. Fix what lint reports
 
 - **loop-seam** — a channel ends somewhere other than where it started, so the
   animation visibly jumps once per loop. Make the first and last key equal.

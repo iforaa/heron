@@ -5,16 +5,22 @@
  * Writing animation blind is why this project exists, so these commands are the
  * point of the library rather than an accessory to it:
  *
+ *   trace     a reference image turned into measured geometry
+ *   match     that geometry checked back against the reference
  *   snapshot  one pose, as an image the agent can actually look at
  *   sheet     several poses tiled, which is how motion is judged
  *   inspect   the same pose as numbers, when geometry is the question
  *   lint      defects that are invisible in a still frame
  *   build     the deliverable, plus a report of anything that was approximated
+ *
+ * `trace` and `match` come first for a reason. Drawing used to be the one step
+ * with no instrument on it, and eyeballing coordinates off a PNG put a uniform
+ * 17-20% stroke-width error through a whole scene without anyone noticing.
  */
 
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { basename, dirname, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
 
 import { Character } from './scene.ts';
@@ -22,6 +28,9 @@ import { renderStatic, renderSheet, boxOfCorners, localCorners, sheetTimes, shee
 import { compile } from './compile.ts';
 import { lint, formatFindings } from './lint.ts';
 import { frameAt } from './timeline.ts';
+import { trace } from './trace.ts';
+import { match, formatMatch } from './match.ts';
+import { encodePng } from './raster.ts';
 
 interface Args {
   _: string[];
@@ -68,6 +77,8 @@ function num(v: unknown, d: number): number {
 
 const USAGE = `heron - compile character animation into a self-contained animated SVG
 
+  heron trace    <image.png> [-o scene.ts] [--epsilon 1.2] [--threshold 0.22]
+  heron match    <scene.ts> <reference.png> [-o overlay.png] [-t 0]
   heron snapshot <scene.ts> [-t 0.4] [-o frame.png] [-w 520] [--svg]
   heron sheet    <scene.ts> [-n 8] [-o sheet.png] [--cols 4] [--svg]
   heron inspect  <scene.ts> [-t 0.4]
@@ -86,7 +97,43 @@ async function main(): Promise<void> {
   }
   if (!file) throw new Error(`heron: ${cmd} needs a scene file`);
 
+  // `trace` reads an image rather than a scene, so it runs before the loader.
+  if (cmd === 'trace') {
+    const out = String(args.o ?? 'scene.ts');
+    const rel = relative(dirname(resolve(out)), fileURLToPath(new URL('./index.ts', import.meta.url)));
+    const res = trace(file, {
+      epsilon: num(args.epsilon, 1.2),
+      threshold: num(args.threshold, 0.22),
+      minBranch: num(args.minBranch, 6),
+      name: args.name ? String(args.name) : undefined,
+      out: basename(out),
+      importFrom: existsSync(resolve('node_modules/@heron/core')) ? '@heron/core' : (rel.startsWith('.') ? rel : `./${rel}`),
+    });
+    write(out, res.source);
+    console.log(`${out}  ${res.width}x${res.height}  ${res.strokes.length} strokes traced, ink ${res.colour}`);
+    const w = res.strokes.map((s) => s.width);
+    if (w.length) {
+      console.log(`  measured widths: ${[...new Set(w.map((v) => v.toFixed(0)))].sort((a, b) => +a - +b).join(', ')} px`);
+    }
+    if (res.varying) {
+      console.log(`  ${res.varying} run(s) taper rather than hold one width - marked in the file as probable filled shapes`);
+    }
+    console.log(`  geometry only. Next: heron match ${out} ${file}, then group the strokes into jointed parts.`);
+    return;
+  }
+
   const ch = await loadScene(file);
+
+  if (cmd === 'match') {
+    const reference = (args._ as string[])[2];
+    if (!reference) throw new Error('heron: match needs a scene file and a reference image');
+    const report = match(ch, reference, { t: num(args.t, 0), threshold: args.threshold ? num(args.threshold, 0.22) : undefined });
+    console.log(formatMatch(report, `${ch.name} vs ${basename(reference)}`));
+    const out = String(args.o ?? 'match.png');
+    write(out, encodePng(report.overlay, report.width, report.height));
+    console.log(`  ${out}  grey both, red reference only, blue scene only`);
+    return;
+  }
 
   switch (cmd) {
     case 'snapshot': {
