@@ -108,7 +108,7 @@ function smooth(g: number[], passes = SMOOTH): number[] {
  * whole edge and discards the part that is per-pixel raster noise, which is the
  * part that was destroying the fit.
  */
-const SMOOTH = 2;
+const SMOOTH = 8;
 
 /** `statics` arrive as finished SVG elements; the ribbons are drawn as fills. */
 function svgOf(statics: string[], ribbons: Ribbon[], ink: string, w: number, h: number): string {
