@@ -90,6 +90,39 @@ export interface Coverage {
 }
 
 /**
+ * The colour the artwork sits on.
+ *
+ * Corners are background far more often than not; the median of the four
+ * survives one corner that happens to carry artwork. Both the mask and the
+ * coverage field key off this, and they have to agree: `match` reports a binary
+ * and a coverage score side by side, so if the two disagreed about what counts
+ * as background the pair would contradict each other with nothing on screen to
+ * explain why.
+ */
+function backgroundColour(bm: Bitmap): [number, number, number] {
+  const { width, height, rgba } = bm;
+  const channel = (c: number): number =>
+    [0, width - 1, (height - 1) * width, height * width - 1]
+      .map((i) => rgba[i * 4 + c]).sort((a, b) => a - b)[1];
+  return [channel(0), channel(1), channel(2)];
+}
+
+/** The 75th percentile of a typed array's values above `floor`. */
+function upperQuartile(data: Float32Array, floor: number): number {
+  let n = 0;
+  for (let i = 0; i < data.length; i++) if (data[i] > floor) n++;
+  if (!n) return 0;
+  const hot = new Float32Array(n);
+  let k = 0;
+  for (let i = 0; i < data.length; i++) if (data[i] > floor) hot[k++] = data[i];
+  // A typed sort, not `Array.from(...).sort(cmp)`: the latter boxes a million
+  // doubles and runs a comparator per comparison, which measured slower than
+  // everything else in `match` put together.
+  hot.sort();
+  return hot[Math.floor(n * 0.75)];
+}
+
+/**
  * Ink coverage rather than an ink yes/no.
  *
  * A threshold is a cliff, and the whole boundary of a mark sits on it: on this
@@ -105,21 +138,17 @@ export interface Coverage {
  */
 export function coverage(bm: Bitmap): Coverage {
   const { width, height, rgba } = bm;
-  const at = (i: number): [number, number, number] => [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]];
-  const corners = [0, width - 1, (height - 1) * width, height * width - 1].map(at);
-  const bg = [0, 1, 2].map((c) => corners.map((p) => p[c]).sort((a, b) => a - b)[1]);
+  const [br, bg, bb] = backgroundColour(bm);
 
   const data = new Float32Array(width * height);
-  for (let i = 0; i < width * height; i++) {
-    const a = rgba[i * 4 + 3] / 255;
-    const [r, g, b] = at(i);
-    data[i] = a * (Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2]));
+  for (let i = 0, p = 0; i < data.length; i++, p += 4) {
+    data[i] = (rgba[p + 3] / 255) *
+      (Math.abs(rgba[p] - br) + Math.abs(rgba[p + 1] - bg) + Math.abs(rgba[p + 2] - bb));
   }
 
   // Solid ink is what the interior reads, not the single most extreme pixel: an
   // upper quartile of the inked pixels is immune to one stray sample.
-  const hot = Array.from(data).filter((v) => v > 20).sort((a, b) => a - b);
-  const full = hot[Math.floor(hot.length * 0.75)] || 1;
+  const full = upperQuartile(data, 20) || 1;
   for (let i = 0; i < data.length; i++) data[i] = Math.min(1, data[i] / full);
   return { width, height, data };
 }
@@ -148,6 +177,18 @@ export function totalCoverage(c: Coverage): number {
   return n;
 }
 
+/** The value at `p` of the way through, 0 to 1, of an already-sorted-or-not list. */
+export function percentile(xs: number[], p: number): number {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.max(0, Math.min(s.length - 1, Math.floor(s.length * p)))];
+}
+
+/** The middle value. Robust where a mean is not, which is why it is used for widths. */
+export function median(xs: number[]): number {
+  return percentile(xs, 0.5);
+}
+
 /**
  * Ink is anything meaningfully darker or more saturated than the background.
  *
@@ -157,19 +198,13 @@ export function totalCoverage(c: Coverage): number {
  */
 export function inkMask(bm: Bitmap, threshold = 0.22): Mask {
   const { width, height, rgba } = bm;
-  const at = (i: number): [number, number, number] => [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]];
-  // Corners are background far more often than not; the median of the four
-  // survives one corner that happens to carry artwork.
-  const corners = [0, width - 1, (height - 1) * width, height * width - 1].map(at);
-  const bg = [0, 1, 2].map((c) => corners.map((p) => p[c]).sort((a, b) => a - b)[1]);
+  const [br, bg, bb] = backgroundColour(bm);
 
   const data = new Uint8Array(width * height);
   const limit = threshold * 255 * 3;
-  for (let i = 0; i < width * height; i++) {
-    const alpha = rgba[i * 4 + 3];
-    const [r, g, b] = at(i);
-    const dist = Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2]);
-    data[i] = alpha > 128 && dist > limit ? 1 : 0;
+  for (let i = 0, p = 0; i < data.length; i++, p += 4) {
+    const dist = Math.abs(rgba[p] - br) + Math.abs(rgba[p + 1] - bg) + Math.abs(rgba[p + 2] - bb);
+    data[i] = rgba[p + 3] > 128 && dist > limit ? 1 : 0;
   }
   return { width, height, data };
 }
@@ -245,9 +280,12 @@ export function distanceField(mask: Mask): Float64Array {
  * surfaced against a coverage comparison, which counts the partly-covered edge
  * pixels a threshold throws away.
  */
-export function radiusField(dist: Float64Array): Float64Array {
-  const r = new Float64Array(dist.length);
-  for (let i = 0; i < dist.length; i++) r[i] = Math.max(0, Math.sqrt(dist[i]) - 0.5);
+export function radiusField(mask: Mask): Float64Array {
+  // Taking the mask rather than a distance field is deliberate. The correction
+  // must be applied exactly once, and a function that accepted the intermediate
+  // would happily take an already-rooted array and square-root it twice.
+  const r = distanceField(mask);
+  for (let i = 0; i < r.length; i++) r[i] = Math.max(0, Math.sqrt(r[i]) - 0.5);
   return r;
 }
 
@@ -376,6 +414,38 @@ export function labelRegions(mask: Mask, runs: Stroke[]): Int32Array {
     }
   }
   return label;
+}
+
+/**
+ * The mask grown by one pixel in every direction.
+ *
+ * Written as a scatter rather than a gather: walking the ink and stamping a 3x3
+ * around each pixel touches only the ink, where testing every pixel's
+ * neighbourhood touches the whole image, and artwork is mostly background.
+ */
+export function dilate(m: Mask): Mask {
+  const { width: w, height: h, data } = m;
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!data[y * w + x]) continue;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < w && ny < h) out[ny * w + nx] = 1;
+        }
+      }
+    }
+  }
+  return { width: w, height: h, data: out };
+}
+
+/** A run that comes back to where it started, within a pixel or two of thinning slop. */
+function isClosedRun(run: Vec2[]): boolean {
+  const a = run[0];
+  const b = run[run.length - 1];
+  return Math.hypot(b[0] - a[0], b[1] - a[1]) < 3;
 }
 
 /** The ink belonging to a subset of strokes, as a mask of its own. */
@@ -650,7 +720,8 @@ function sample(f: Float64Array, w: number, h: number, x: number, y: number): nu
 }
 
 /** Unit tangent at `i`, taken over a short window so lattice steps average out. */
-function tangentAt(pts: Vec2[], i: number, closed: boolean, span = 2): Vec2 {
+function tangentAt(pts: Vec2[], i: number, closed = false): Vec2 {
+  const span = 2;
   const n = pts.length;
   const at = (k: number) => (closed ? pts[((k % n) + n) % n] : pts[Math.max(0, Math.min(n - 1, k))]);
   const a = at(i - span);
@@ -698,6 +769,11 @@ function refineRidge(
   return { points, radii };
 }
 
+/** A terminal this much thinner than its run is a wedge, not an ordinary end. */
+const TAPER_TIP = 0.6;
+/** Walking inward from a wedge's point, the run has arrived once it reaches this. */
+const TAPER_KNEE = 0.85;
+
 /**
  * Cuts a tapered terminal off the run it is fused to.
  *
@@ -717,24 +793,21 @@ function splitTapers(runs: Vec2[][], rad: Float64Array, w: number, minBranch: nu
   const out: Vec2[][] = [];
   for (const run of runs) {
     const r = run.map((p) => rad[p[1] * w + p[0]]);
-    const sorted = [...r].sort((a, b) => a - b);
-    const mid = sorted[Math.floor(sorted.length / 2)];
-    const first = run[0];
-    const last = run[run.length - 1];
-    const closed = Math.hypot(last[0] - first[0], last[1] - first[1]) < 3;
+    const mid = median(r);
 
     let lo = 0;
     let hi = run.length - 1;
-    if (!closed && mid > 0) {
-      for (const side of [0, 1]) {
+    if (!isClosedRun(run) && mid > 0) {
+      // Each end is examined from its own side, so the search reads forwards in
+      // both cases and there is no index arithmetic to get backwards.
+      for (const from of [r, [...r].reverse()]) {
         // A taper is a tip far thinner than the run, thickening steadily inward.
         // Anything that starts near full width is an ordinary end, not a wedge.
-        const tipR = side === 0 ? r[0] : r[r.length - 1];
-        if (tipR > 0.6 * mid) continue;
+        if (from[0] > TAPER_TIP * mid) continue;
         let k = 0;
-        while (k < run.length && (side === 0 ? r[k] : r[r.length - 1 - k]) < 0.85 * mid) k++;
+        while (k < from.length && from[k] < TAPER_KNEE * mid) k++;
         if (k < minBranch || run.length - k < minBranch) continue;
-        if (side === 0) lo = k; else hi = run.length - 1 - k;
+        if (from === r) lo = k; else hi = run.length - 1 - k;
       }
     }
 
@@ -745,12 +818,25 @@ function splitTapers(runs: Vec2[][], rad: Float64Array, w: number, minBranch: nu
   return out;
 }
 
-export interface EndFit {
+interface EndFit {
   /** How far the ink reaches past the last centreline point, along the run. */
   reach: number;
   /** A rounded tip narrows before it stops; a cut one does not. */
   round: boolean;
 }
+
+/** How far out along the cap the profile is read, as a fraction of its reach. */
+const PROBE = 0.75;
+/**
+ * The half-width, relative to the stroke's, that separates a domed tip from a cut
+ * one — derived from `PROBE` rather than written down beside it. At the probe
+ * position a circular cap has narrowed to sqrt(1 - PROBE^2) of full width while a
+ * cut one is still at 1, and the discriminator is the midpoint. Moving the probe
+ * without moving this would leave a plausible number that is quietly biased, and
+ * the symptom — some cut ends rendering round — is the bug the measurement was
+ * added to remove.
+ */
+const CUT = (Math.sqrt(1 - PROBE * PROBE) + 1) / 2;
 
 /**
  * What the ink does past the end of the centreline.
@@ -784,8 +870,8 @@ function endGeometry(mask: Mask, p: Vec2, tangent: Vec2, r: number): EndFit {
   }
   if (reach <= 0) return { reach: 0, round: true };
 
-  // Half-width across the run, three-quarters of the way to the tip.
-  const at = 0.75 * reach;
+  // Half-width across the run, most of the way out to the tip.
+  const at = PROBE * reach;
   const bx = p[0] + tangent[0] * at;
   const by = p[1] + tangent[1] * at;
   const nx = -tangent[1];
@@ -799,10 +885,7 @@ function endGeometry(mask: Mask, p: Vec2, tangent: Vec2, r: number): EndFit {
     return d;
   };
   const half = (arm(1) + arm(-1)) / 2;
-
-  // A circular cap is at sqrt(1 - 0.75^2) = 0.66 of its radius here; a cut one is
-  // still at 1.0. The cut stays midway between them.
-  return { reach, round: r > 0 ? half < 0.83 * r : true };
+  return { reach, round: r > 0 ? half < CUT * r : true };
 }
 
 /**
@@ -813,16 +896,17 @@ function endGeometry(mask: Mask, p: Vec2, tangent: Vec2, r: number): EndFit {
  * does not, and emitting the second as `through(points, { width })` would
  * quietly flatten it.
  */
-export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6): Stroke[] {
+export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6, skeleton?: Mask): Stroke[] {
   const { width: w, height: h } = mask;
-  const rad = radiusField(distanceField(mask));
-  const skel = skeletonise(mask);
+  const rad = radiusField(mask);
+  // Thinning is by far the most expensive step here, so a caller that already
+  // has the skeleton — `trace` needs it again for the junctions — passes it in
+  // rather than paying for a second identical pass.
+  const skel = skeleton ?? skeletonise(mask);
 
   return splitTapers(traceSkeleton(skel, minBranch), rad, w, minBranch)
     .map((raw): Stroke => {
-      const first = raw[0];
-      const last = raw[raw.length - 1];
-      const closed = Math.hypot(last[0] - first[0], last[1] - first[1]) < 3;
+      const closed = isClosedRun(raw);
       const { points: ridge, radii } = refineRidge(rad, w, h, raw, closed);
 
       /**
@@ -832,13 +916,12 @@ export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6): Stroke[] {
        * tenth of a long run is far more than a cap, and cutting that much is
        * what let genuine tapers pass as constant-width strokes.
        */
-      const rough = [...radii].sort((a, b) => a - b)[Math.floor(radii.length / 2)] ?? 0;
-      const skip = Math.min(Math.ceil(rough), Math.floor(radii.length / 3));
+      const skip = Math.min(Math.ceil(median(radii)), Math.floor(radii.length / 3));
       const cut = radii.slice(skip, radii.length - skip);
-      const ws = (cut.length ? cut : radii).map((v) => v * 2).sort((a, b) => a - b);
-      const mid = ws[Math.floor(ws.length / 2)] ?? 0;
-      const lo = ws[Math.floor(ws.length * 0.1)] ?? mid;
-      const hi = ws[Math.floor(ws.length * 0.9)] ?? mid;
+      const ws = (cut.length ? cut : radii).map((v) => v * 2);
+      const mid = median(ws);
+      const lo = percentile(ws, 0.1);
+      const hi = percentile(ws, 0.9);
 
       /**
        * Both kinds of end are short, and each is short for its own reason.
@@ -863,27 +946,31 @@ export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6): Stroke[] {
        * closing it means rejoining the two branches into one continuous curve,
        * which is a decision about the drawing rather than a measurement of it.
        */
-      const line = ridge.slice();
       let round = true;
       if (!closed) {
-        for (const side of [0, 1]) {
-          const tip = side === 0 ? 0 : line.length - 1;
+        const tips = [0, ridge.length - 1];
+        // Both tangents are read before either end moves. Taken inside the loop
+        // they would not be equivalent: the second would be measured against a
+        // first endpoint that had already been pushed outward.
+        const out = tips.map((tip, side): Vec2 => {
+          const [tx, ty] = tangentAt(ridge, tip);
+          return side === 0 ? [-tx, -ty] : [tx, ty];
+        });
+        tips.forEach((tip, side) => {
           const px = raw[tip];
-          if (crossingNumber(skel, px[1] * w + px[0]) !== 1) continue;
-          const t = tangentAt(ridge, tip, false);
-          const out: Vec2 = side === 0 ? [-t[0], -t[1]] : t;
+          if (crossingNumber(skel, px[1] * w + px[0]) !== 1) return;
           const r = mid / 2;
-          const fit = endGeometry(mask, line[tip], out, r);
-          if (!fit.reach) continue;
+          const fit = endGeometry(mask, ridge[tip], out[side], r);
+          if (!fit.reach) return;
           if (!fit.round) round = false;
           // A round cap already draws a radius past the polyline, so the line
           // must stop that much short of the tip. A cut one draws nothing.
           const grow = Math.max(0, Math.min(1.5 * r, fit.reach - (fit.round ? r : 0)));
-          line[tip] = [line[tip][0] + out[0] * grow, line[tip][1] + out[1] * grow];
-        }
+          ridge[tip] = [ridge[tip][0] + out[side][0] * grow, ridge[tip][1] + out[side][1] * grow];
+        });
       }
 
-      const points = simplify(line, epsilon);
+      const points = simplify(ridge, epsilon);
       return {
         points,
         width: Math.round(mid * 10) / 10,
@@ -893,7 +980,7 @@ export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6): Stroke[] {
         cap: round ? 'round' : 'butt',
         corners: sharpCorners(points),
         centreline: raw,
-        ridge: line,
+        ridge,
       };
     })
     // A run shorter than it is wide is not a stroke. It is the remnant of a

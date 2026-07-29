@@ -42,7 +42,7 @@
  * Read every one before animating.
  */
 
-import { character, layer, arc, line, path, through, type Character } from '../src/index.ts';
+import { character, layer, arc, line, through, path, type Character } from '../src/index.ts';
 
 const INK = '#3ba064';
 

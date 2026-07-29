@@ -35,14 +35,55 @@ import type { Vec2 } from './scene.ts';
  * exactly where the skeleton could not.
  */
 const KEEP = 2.5;
+/** Rounds of trim-and-refit. Three is well past where the inlier set stops moving. */
+const ROUNDS = 3;
 
-function trimmed(residuals: number[]): number[] {
-  const sorted = [...residuals].sort((a, b) => a - b);
-  const mid = sorted[Math.floor(sorted.length / 2)];
-  const limit = Math.max(1, KEEP * mid);
-  const keep: number[] = [];
-  for (let i = 0; i < residuals.length; i++) if (residuals[i] <= limit) keep.push(i);
-  return keep;
+/**
+ * Fits a model, drops the points it cannot explain, and refits until the set
+ * settles.
+ *
+ * Both fits need exactly this and only differ in their algebra, so the
+ * robustness policy — how much slack, how many rounds, how few points is too
+ * few — is stated once here rather than twice in two shapes that can drift.
+ */
+function refit<T>(
+  pts: Vec2[],
+  least: number,
+  solve: (sample: Vec2[]) => T | null,
+  residual: (model: T, p: Vec2) => number,
+): { model: T; inliers: Vec2[] } | null {
+  let use = pts;
+  let model: T | null = null;
+
+  for (let round = 0; round < ROUNDS; round++) {
+    model = solve(use);
+    if (!model) return null;
+    const limit = Math.max(1, KEEP * median(use.map((p) => residual(model!, p))));
+    const keep = use.filter((p) => residual(model!, p) <= limit);
+    // Settled: either nothing was rejected this round, or rejecting more would
+    // leave too few points to solve from.
+    if (keep.length === use.length || keep.length < least) break;
+    use = keep;
+  }
+  return model ? { model, inliers: use } : null;
+}
+
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+}
+
+/**
+ * The largest `f` over the points, by a plain loop.
+ *
+ * Not `Math.max(...xs.map(f))`: a ridge is a full-density centreline, and
+ * spreading one of those throws `RangeError` on a large reference rather than
+ * degrading.
+ */
+function worst(pts: Vec2[], f: (p: Vec2) => number): number {
+  let out = 0;
+  for (const p of pts) out = Math.max(out, f(p));
+  return out;
 }
 
 export interface LineFit {
@@ -84,20 +125,22 @@ function centroid(pts: Vec2[]): Vec2 {
  * vertical run has no function of x to fit, and a crane's leg is vertical.
  * Minimising the perpendicular distance has no preferred axis.
  */
+interface Axis { mx: number; my: number; ux: number; uy: number }
+
+/** Perpendicular distance from a point to an infinite line. */
+function offLine(a: Axis, p: Vec2): number {
+  return Math.abs((p[0] - a.mx) * -a.uy + (p[1] - a.my) * a.ux);
+}
+
 export function fitLine(pts: Vec2[]): LineFit | null {
   if (pts.length < 4) return null;
-  let use = pts;
-  let mx = 0;
-  let my = 0;
-  let ux = 1;
-  let uy = 0;
 
-  for (let round = 0; round < 3; round++) {
-    [mx, my] = centroid(use);
+  const found = refit<Axis>(pts, 4, (sample) => {
+    const [mx, my] = centroid(sample);
     let sxx = 0;
     let syy = 0;
     let sxy = 0;
-    for (const [x, y] of use) {
+    for (const [x, y] of sample) {
       const dx = x - mx;
       const dy = y - my;
       sxx += dx * dx;
@@ -106,34 +149,27 @@ export function fitLine(pts: Vec2[]): LineFit | null {
     }
     // Principal axis of the scatter: the direction the points vary along most.
     const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
-    ux = Math.cos(angle);
-    uy = Math.sin(angle);
-
-    const off = (p: Vec2) => Math.abs((p[0] - mx) * -uy + (p[1] - my) * ux);
-    const keep = trimmed(use.map(off));
-    if (keep.length === use.length || keep.length < 4) break;
-    use = keep.map((i) => use[i]);
-  }
+    return { mx, my, ux: Math.cos(angle), uy: Math.sin(angle) };
+  }, offLine);
+  if (!found) return null;
+  const { model: a, inliers } = found;
 
   // The extent spans every point, so the line covers the whole run even where a
   // crossing pushed a few samples off it.
   let lo = Infinity;
   let hi = -Infinity;
   for (const [x, y] of pts) {
-    const t = (x - mx) * ux + (y - my) * uy;
+    const t = (x - a.mx) * a.ux + (y - a.my) * a.uy;
     if (t < lo) lo = t;
     if (t > hi) hi = t;
   }
   if (!Number.isFinite(lo) || hi - lo < 1e-6) return null;
 
-  let error = 0;
-  for (const [x, y] of use) error = Math.max(error, Math.abs((x - mx) * -uy + (y - my) * ux));
-
   return {
-    from: [mx + ux * lo, my + uy * lo],
-    to: [mx + ux * hi, my + uy * hi],
-    error,
-    inliers: use.length / pts.length,
+    from: [a.mx + a.ux * lo, a.my + a.uy * lo],
+    to: [a.mx + a.ux * hi, a.my + a.uy * hi],
+    error: worst(inliers, (p) => offLine(a, p)),
+    inliers: inliers.length / pts.length,
   };
 }
 
@@ -161,15 +197,18 @@ function solve3(m: number[][], v: number[]): number[] | null {
  * image the raw normal equations carry terms in x^4, which is where a
  * least-squares fit quietly loses its precision to floating point.
  */
+interface Ring { cx: number; cy: number; r: number }
+
+/** How far a point sits off a circle, inside or out. */
+function offCircle(c: Ring, p: Vec2): number {
+  return Math.abs(Math.hypot(p[0] - c.cx, p[1] - c.cy) - c.r);
+}
+
 export function fitCircle(pts: Vec2[]): CircleFit | null {
   if (pts.length < 8) return null;
-  let use = pts;
-  let cx = 0;
-  let cy = 0;
-  let r = 0;
 
-  for (let round = 0; round < 3; round++) {
-    const [mx, my] = centroid(use);
+  const found = refit<Ring>(pts, 8, (sample) => {
+    const [mx, my] = centroid(sample);
     let sxx = 0;
     let syy = 0;
     let sxy = 0;
@@ -178,7 +217,7 @@ export function fitCircle(pts: Vec2[]): CircleFit | null {
     let sxz = 0;
     let syz = 0;
     let sz = 0;
-    for (const [px, py] of use) {
+    for (const [px, py] of sample) {
       const x = px - mx;
       const y = py - my;
       const z = x * x + y * y;
@@ -193,26 +232,21 @@ export function fitCircle(pts: Vec2[]): CircleFit | null {
     }
 
     const sol = solve3(
-      [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, use.length]],
+      [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, sample.length]],
       [-sxz, -syz, -sz],
     );
     if (!sol) return null;
     const [d, e, f] = sol;
-    cx = -d / 2 + mx;
-    cy = -e / 2 + my;
-    const inner = (cx - mx) * (cx - mx) + (cy - my) * (cy - my) - f;
+    const inner = (d / 2) * (d / 2) + (e / 2) * (e / 2) - f;
     if (!(inner > 0)) return null;
-    r = Math.sqrt(inner);
+    const r = Math.sqrt(inner);
     if (!Number.isFinite(r) || r <= 0) return null;
+    return { cx: -d / 2 + mx, cy: -e / 2 + my, r };
+  }, offCircle);
+  if (!found) return null;
+  const { model: { cx, cy, r }, inliers: use } = found;
 
-    const off = (p: Vec2) => Math.abs(Math.hypot(p[0] - cx, p[1] - cy) - r);
-    const keep = trimmed(use.map(off));
-    if (keep.length === use.length || keep.length < 8) break;
-    use = keep.map((i) => use[i]);
-  }
-
-  let error = 0;
-  for (const [px, py] of use) error = Math.max(error, Math.abs(Math.hypot(px - cx, py - cy) - r));
+  const error = worst(use, (p) => offCircle({ cx, cy, r }, p));
 
   // Angles are unwrapped along the run rather than taken absolutely, so an arc
   // crossing the 180-degree seam stays one continuous sweep instead of jumping
@@ -233,3 +267,5 @@ export function fitCircle(pts: Vec2[]): CircleFit | null {
 
   return { cx, cy, r, from, to: from + total, error, inliers: use.length / pts.length };
 }
+
+export type { Ring, Axis };

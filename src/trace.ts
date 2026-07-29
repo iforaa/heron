@@ -64,6 +64,14 @@ export interface TraceResult {
 
 /** Above this, a run is tapering rather than holding one width. */
 const TAPER = 1.35;
+/** Widths within this of each other came off the same pen. */
+const PEN = 0.05;
+/** A fit must describe at least this much of a run to be a description of it. */
+const MOSTLY = 0.85;
+/** Below this sweep an arc is better said as a line. */
+const MIN_SWEEP = 20;
+/** An arc whose radius dwarfs its own extent is a straight line in disguise. */
+const MAX_RADIUS = 5;
 
 /**
  * Snaps measured widths onto the few pen weights the drawing was made with.
@@ -79,34 +87,39 @@ const TAPER = 1.35;
  * Only widths already within a few percent of each other are pooled. Two genuine
  * weights stay two.
  */
-function quantiseWidths(runs: Stroke[], tolerance = 0.05): Map<number, number> {
+function quantiseWidths(runs: Stroke[], tapering: boolean[]): number[] {
   const eligible = runs
     .map((s, i) => ({ i, w: s.width, len: s.length }))
-    .filter((r) => r.w > 0 && runs[r.i].widthVariation <= TAPER)
+    .filter((r) => r.w > 0 && !tapering[r.i])
     .sort((a, b) => a.w - b.w);
 
-  const groups: { members: typeof eligible }[] = [];
+  const groups: (typeof eligible)[] = [];
   for (const r of eligible) {
     const last = groups[groups.length - 1];
     // Compared against the group's smallest member, so a long chain of small
     // steps cannot drift a group across two genuinely different weights.
-    if (last && r.w <= last.members[0].w * (1 + tolerance)) last.members.push(r);
-    else groups.push({ members: [r] });
+    if (last && r.w <= last[0].w * (1 + PEN)) last.push(r);
+    else groups.push([r]);
   }
 
-  const out = new Map<number, number>();
+  // Every stroke ends up here with its final width, rather than only the ones
+  // that moved. An emission site that had to remember to consult a map of
+  // exceptions would eventually forget, and quietly print the un-pooled
+  // measurement — which is exactly the kind of uniform, invisible error the
+  // pooling exists to remove.
+  const out = runs.map((s) => s.width);
   for (const g of groups) {
-    // Weighted by length: a 400px run measured the pen far better than a 30px one.
-    const total = g.members.reduce((n, m) => n + m.len, 0);
+    // Weighted by length: a 400px run measured the pen far better than a 30px
+    // one. `g` is already ascending in width, so this walk is the weighted median.
+    const total = g.reduce((n, m) => n + m.len, 0);
     let seen = 0;
-    let pick = g.members[0].w;
-    for (const m of [...g.members].sort((a, b) => a.w - b.w)) {
+    let pick = 0;
+    for (const m of g) {
       seen += m.len;
       pick = m.w;
       if (seen >= total / 2) break;
     }
-    const w = Math.round(pick * 10) / 10;
-    for (const m of g.members) if (m.w !== w) out.set(m.i, w);
+    for (const m of g) out[m.i] = Math.round(pick * 10) / 10;
   }
   return out;
 }
@@ -141,18 +154,41 @@ function pointList(pts: Vec2[], scale: number): string {
   return rows.join(',\n');
 }
 
+/** The extent of a point list, by one pass rather than four spreads. */
+function bounds(pts: Vec2[], scale: number): [number, number, number, number] {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const [px, py] of pts) {
+    const x = px / scale;
+    const y = py / scale;
+    if (x < x0) x0 = x;
+    if (y < y0) y0 = y;
+    if (x > x1) x1 = x;
+    if (y > y1) y1 = y;
+  }
+  return [x0, y0, x1, y1];
+}
+
 export function trace(file: string, o: TraceOptions = {}): TraceResult {
   const bm = loadImage(file);
   const mask = inkMask(bm, o.threshold);
   const colour = inkColour(bm, mask);
-  const found = strokes(mask, o.epsilon ?? 1.2, o.minBranch ?? 6);
-  const joints = junctions(skeletonise(mask));
+  // Thinning costs more than everything else here put together, so the skeleton
+  // is taken once and shared with the two things that need it.
+  const skeleton = skeletonise(mask);
+  const found = strokes(mask, o.epsilon ?? 1.2, o.minBranch ?? 6, skeleton);
+  const joints = junctions(skeleton);
 
   const s = bm.scale;
   const W = Math.round(bm.width / s);
   const H = Math.round(bm.height / s);
   const name = ident(o.name ?? basename(file, extname(file)));
-  const varying = found.filter((k) => k.widthVariation > TAPER).length;
+  // Decided once. Read four different ways it becomes four chances for the
+  // splitter's idea of a taper and the emitter's to disagree.
+  const tapering = found.map((k) => k.widthVariation > TAPER);
+  const varying = tapering.filter(Boolean).length;
   const self = o.out ?? 'scene.ts';
 
   /**
@@ -165,8 +201,8 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
   const label = useOutlines ? labelRegions(mask, found) : null;
   const outline = new Map<number, string>();
   if (label) {
-    found.forEach((k, i) => {
-      if (k.widthVariation <= TAPER) return;
+    found.forEach((_, i) => {
+      if (!tapering[i]) return;
       const paths = outlinePaths(maskOfRegions(mask, label, new Set([i])));
       // A region can come back as several contours — separate blobs, or a shape
       // with a hole. They are still one part, and potrace winds them so nonzero
@@ -176,7 +212,13 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
     });
   }
 
-  const quantised = quantiseWidths(found);
+  // Resolved once, for every stroke, before anything is emitted. No emission
+  // site can then reach an un-pooled measurement by forgetting to ask.
+  const pen = quantiseWidths(found, tapering);
+
+  // Which primitives the generated file actually uses, recorded where each one
+  // is written rather than recovered afterwards by searching the output for it.
+  const used = new Set(['character', 'layer']);
 
   /**
    * A run that is really a circle or a line is emitted as one.
@@ -186,18 +228,15 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
    * 4000-pixel arc is true, useless, and impossible to animate.
    */
   const tol = o.fit ?? 1.5;
-  // A fit that only describes part of a run is not a description of the run.
-  // Half a curve will always admit some line through it at a small residual.
-  const MOSTLY = 0.85;
   const shape = new Map<number, string>();
   if (tol > 0) {
     found.forEach((k, i) => {
-      if (k.widthVariation > TAPER || k.ridge.length < 8) return;
-      const width = Math.round(((quantised.get(i) ?? k.width) / s) * 10) / 10;
-      const tail = `stroke: INK, width: ${width}${k.cap === 'butt' ? `, cap: 'butt'` : ''}`;
+      if (tapering[i] || k.ridge.length < 8) return;
+      const tail = `stroke: INK, width: ${n1(pen[i] / s)}${k.cap === 'butt' ? `, cap: 'butt'` : ''}`;
 
       const straight = fitLine(k.ridge);
       if (straight && straight.error <= tol && straight.inliers >= MOSTLY) {
+        used.add('line');
         shape.set(i, `    //   a straight line, within ${n1(straight.error / s)}px over its whole length\n`
           + `    line({ from: [${n1(straight.from[0] / s)}, ${n1(straight.from[1] / s)}], `
           + `to: [${n1(straight.to[0] / s)}, ${n1(straight.to[1] / s)}], ${tail} });`);
@@ -207,10 +246,11 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
       const round = fitCircle(k.ridge);
       if (!round || round.error > tol || round.inliers < MOSTLY) return;
       const sweep = Math.abs(round.to - round.from);
-      const span = Math.hypot(...[0, 1].map((d) => Math.max(...k.ridge.map((p) => p[d])) - Math.min(...k.ridge.map((p) => p[d]))));
-      if (sweep < 20 || round.r > span * 5) return;
+      const [x0, y0, x1, y1] = bounds(k.ridge, 1);
+      if (sweep < MIN_SWEEP || round.r > Math.hypot(x1 - x0, y1 - y0) * MAX_RADIUS) return;
       const arcArgs = `cx: ${n1(round.cx / s)}, cy: ${n1(round.cy / s)}, r: ${n1(round.r / s)}`;
       const angles = k.closed || sweep >= 359 ? '' : `, from: ${n1(round.from)}, to: ${n1(round.to)}`;
+      used.add('arc');
       shape.set(i, `    //   a circle, within ${n1(round.error / s)}px over ${Math.round(sweep)} degrees. Fitted\n`
         + `    //   from ${k.ridge.length} samples, so it is a better estimate than any of them.\n`
         + `    arc({ ${arcArgs}${angles}, ${tail} });`);
@@ -218,21 +258,20 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
   }
 
   const body = found.map((k, i) => {
-    const xs = k.points.map((p) => p[0] / s);
-    const ys = k.points.map((p) => p[1] / s);
-    const box = `[${Math.round(Math.min(...xs))} ${Math.round(Math.min(...ys))} ${Math.round(Math.max(...xs))} ${Math.round(Math.max(...ys))}]`;
+    const box = `[${bounds(k.points, s).map(Math.round).join(' ')}]`;
 
     // A tapering region that potrace could resolve is emitted as its true
     // outline, so it is exact rather than approximated by one width.
     const traced = outline.get(i);
     if (traced) {
+      used.add('path');
       return `    // s${i}  box ${box}  length ${Math.round(k.length / s)}px\n`
         + `    //   filled shape: width varied ${k.widthVariation}x, so this is its exact\n`
         + `    //   outline rather than a constant-width stroke.\n`
         + `    path({ d: '${traced}', fill: INK });`;
     }
 
-    const taper = k.widthVariation > TAPER
+    const taper = tapering[i]
       ? `\n    // ! width varies ${k.widthVariation}x along this run: probably a filled shape,`
         + `\n    //   not a stroke, and no outline tracer was available to resolve it.`
         + `\n    //   Install potrace and re-run, or redraw it with path({ d }) by hand.`
@@ -242,18 +281,19 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
         + `\n    //   A drawn stroke curves; a hard corner usually means two things were`
         + `\n    //   traced as one run because they touch. Consider splitting it there.`
       : '';
-    const width = Math.round(((quantised.get(i) ?? k.width) / s) * 10) / 10;
-    const pen = quantised.has(i)
-      ? `\n    //   width snapped from ${Math.round((k.width / s) * 10) / 10} to the shared pen weight ${width}`
+    const width = n1(pen[i] / s);
+    const snapped = pen[i] !== k.width
+      ? `\n    //   width snapped from ${n1(k.width / s)} to the shared pen weight ${width}`
       : '';
     // A cut end rendered with a round cap bulges past the tip and leaves the
     // corners bare, so the measured cap travels with the geometry.
     const head = `    // s${i}  box ${box}  length ${Math.round(k.length / s)}px  width ${width}`
-      + `${k.cap === 'butt' ? '  cut ends' : ''}${pen}${taper}${bends}\n`;
+      + `${k.cap === 'butt' ? '  cut ends' : ''}${snapped}${taper}${bends}\n`;
 
     const fitted = shape.get(i);
     if (fitted) return head + fitted;
 
+    used.add('through');
     const opts = [
       `stroke: INK`, `width: ${width}`,
       k.cap === 'butt' ? `cap: 'butt'` : '', k.closed ? 'closed: true' : '',
@@ -309,14 +349,7 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
  * Read every one before animating.
  */
 
-import { ${
-  ['character', 'layer',
-    body.includes('\n    arc(') ? 'arc' : '',
-    body.includes('\n    line(') ? 'line' : '',
-    body.includes('\n    path(') ? 'path' : '',
-    body.includes('\n    through(') ? 'through' : '',
-  ].filter(Boolean).join(', ')
-}, type Character } from '${o.importFrom ?? '@heron/core'}';
+import { ${[...used].join(', ')}, type Character } from '${o.importFrom ?? '@heron/core'}';
 
 const INK = '${colour}';
 

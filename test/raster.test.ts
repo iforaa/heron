@@ -96,12 +96,10 @@ test('measured width comes back as the width that was drawn', () => {
 test('the radius field measures to the edge of the ink, not to the next pixel', () => {
   const m = blank(60, 40);
   hline(m, 5, 55, 20, 11);
-  const raw = distanceField(m);
-  const r = radiusField(raw);
   // Eleven rows of ink span from y=14.5 to y=25.5, so the centre row sits 5.5
   // from the boundary while the nearest background pixel's centre is 6 away.
-  assert.equal(Math.sqrt(raw[20 * 60 + 30]), 6, 'the raw field counts whole pixels');
-  assert.equal(r[20 * 60 + 30], 5.5, 'the radius field counts to the edge');
+  assert.equal(Math.sqrt(distanceField(m)[20 * 60 + 30]), 6, 'the raw field counts whole pixels');
+  assert.equal(radiusField(m)[20 * 60 + 30], 5.5, 'the radius field counts to the edge');
 });
 
 test('a centreline lands between pixels when that is where it belongs', () => {

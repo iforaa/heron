@@ -22,7 +22,8 @@ import { evaluate } from './timeline.ts';
 import { nodeSvg, sceneBox, svgOpen } from './render.ts';
 import type { Character } from './scene.ts';
 import {
-  type Bitmap, type Mask, coverage, inkMask, loadImage, rasterise, softOverlap, totalCoverage,
+  type Bitmap, type Mask, coverage, dilate, inkMask, loadImage, median, rasterise,
+  softOverlap, totalCoverage,
 } from './raster.ts';
 
 export interface WidthProbe {
@@ -93,12 +94,6 @@ function runs(m: Mask, y: number): number[] {
   return out;
 }
 
-function median(xs: number[]): number {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-}
-
 /**
  * Rows worth probing: spread through the artwork's own vertical extent rather
  * than the image's, so a mark with generous padding still gets sampled where
@@ -130,41 +125,29 @@ function probeRows(m: Mask, count: number): number[] {
  * chunky one the same 93% would mean something is genuinely in the wrong place.
  */
 function boundarySensitivity(m: Mask): number {
-  const { width: w, height: h, data } = m;
-  let both = 0;
-  let union = 0;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let grown = 0;
-      for (let dy = -1; dy <= 1 && !grown; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx >= 0 && ny >= 0 && nx < w && ny < h && data[ny * w + nx]) {
-            grown = 1;
-            break;
-          }
-        }
-      }
-      const self = data[y * w + x];
-      if (self && grown) both++;
-      if (self || grown) union++;
-    }
+  // A dilation contains the original — every inked pixel is its own neighbour —
+  // so the intersection is just the ink and the union is just the dilation, and
+  // the whole intersection-over-union collapses to a ratio of two counts.
+  let ink = 0;
+  let grown = 0;
+  const wide = dilate(m).data;
+  for (let i = 0; i < m.data.length; i++) {
+    ink += m.data[i];
+    grown += wide[i];
   }
-  return union ? Math.round((100 - (both / union) * 100) * 10) / 10 : 0;
+  return grown ? Math.round((100 - (ink / grown) * 100) * 10) / 10 : 0;
 }
 
 /** Red where the reference has ink the scene lacks, blue where the scene invents it. */
 function overlayPng(a: Mask, b: Mask): Uint8Array {
   const px = new Uint8Array(a.width * a.height * 4);
-  for (let i = 0; i < a.width * a.height; i++) {
+  for (let i = 0, p = 0; i < a.data.length; i++, p += 4) {
     const r = a.data[i];
     const s = b.data[i];
-    const c = r && s ? [188, 188, 188] : r ? [214, 42, 42] : s ? [40, 88, 214] : [255, 255, 255];
-    px[i * 4] = c[0];
-    px[i * 4 + 1] = c[1];
-    px[i * 4 + 2] = c[2];
-    px[i * 4 + 3] = 255;
+    px[p] = r && s ? 188 : r ? 214 : s ? 40 : 255;
+    px[p + 1] = r && s ? 188 : r ? 42 : s ? 88 : 255;
+    px[p + 2] = r && s ? 188 : r ? 42 : s ? 214 : 255;
+    px[p + 3] = 255;
   }
   return px;
 }
@@ -242,12 +225,17 @@ export function formatMatch(r: MatchReport, name: string): string {
     `   (binary ${r.iou}% / ${r.inkRatio.toFixed(2)}x)`,
   );
 
+  // How far out the boundary is, in pixels: the shortfall divided by what one
+  // pixel of edge costs. Computed once, because both the scale line and the
+  // verdict at the end read it, and two spellings of one threshold drift apart.
+  const short = Math.max(0, 100 - r.softIou);
+  const edge = r.boundaryCost ? short / r.boundaryCost : Infinity;
+
   // Without this line every other percentage is unreadable, because "6% short"
   // means a misplaced limb on one drawing and a half-pixel edge on another.
   if (r.boundaryCost) {
-    const edge = Math.max(0, 100 - r.softIou) / r.boundaryCost;
     lines.push(
-      `  scale: one pixel of edge error costs ${r.boundaryCost}% here, so ${(100 - r.softIou).toFixed(1)}% ` +
+      `  scale: one pixel of edge error costs ${r.boundaryCost}% here, so ${short.toFixed(1)}% ` +
       `short is about ${edge.toFixed(1)} pixel(s) of boundary — ` +
       (edge < 0.35 ? 'sub-pixel, and close to the limit of the raster.'
         : edge < 1 ? 'edges, not placement. Chase widths and endpoints, not coordinates.'
@@ -266,19 +254,29 @@ export function formatMatch(r: MatchReport, name: string): string {
     lines.push(`  stroke width within ${pct(Math.abs(1 - r.widthRatio))} of the reference`);
   }
 
-  // Coverage catches a bias the binary count cannot: a uniform half-pixel of
-  // extra edge never flips enough whole pixels to register, but it is real ink
-  // and it is the signature of a systematic measurement error rather than a
-  // drawing mistake.
+  /**
+   * One authority on how much ink there is, and it is the coverage one.
+   *
+   * Coverage catches a bias the binary count cannot: a uniform half-pixel of
+   * extra edge never flips enough whole pixels to register, but it is real ink
+   * and it is the signature of a systematic measurement error rather than a
+   * drawing mistake. Reporting both measures with their own thresholds let them
+   * contradict each other — a scene whose antialiasing differs from the
+   * reference could read 1.12x by pixel count and 1.01x by coverage, with the
+   * report saying both "you drew ink that is not there" and nothing at all.
+   * The binary counts stay, because they name the red and blue in the overlay,
+   * but they no longer decide anything.
+   */
   if (Math.abs(r.coverageRatio - 1) > 0.015) {
-    const dir = r.coverageRatio < 1 ? 'less' : 'more';
+    const heavy = r.coverageRatio > 1;
     lines.push(
-      `  ink is ${pct(Math.abs(1 - r.coverageRatio))} ${dir} than the reference (${r.coverageRatio.toFixed(3)}x). ` +
-      `Uniform, so suspect a measurement bias before suspecting any one shape.`,
+      `  ink is ${pct(Math.abs(1 - r.coverageRatio))} ${heavy ? 'more' : 'less'} than the reference ` +
+      `(${r.coverageRatio.toFixed(3)}x): ${heavy ? `${r.extra} px drawn that the reference does not have`
+        : `${r.missing} px present in the reference only`}. ` +
+      (edge < 1 ? 'Spread along the edges, so suspect a measurement bias before any one shape.'
+        : 'Read the overlay — at this scale it is a shape, not a bias.'),
     );
   }
-  if (r.inkRatio < 0.9) lines.push(`  scene is missing ink: ${r.missing} px present in the reference only`);
-  else if (r.inkRatio > 1.1) lines.push(`  scene draws ${r.extra} px the reference does not have`);
 
   for (const p of r.widths) {
     const f = (xs: number[]) => (xs.length ? xs.join(' ') : '-');
@@ -286,7 +284,7 @@ export function formatMatch(r: MatchReport, name: string): string {
   }
 
   lines.push(
-    100 - r.softIou < r.boundaryCost
+    edge < 1
       ? '  shapes line up to within a pixel of edge'
       : `  shapes differ: read the overlay, red is reference-only and blue is scene-only`,
   );
