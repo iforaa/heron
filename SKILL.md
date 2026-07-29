@@ -71,13 +71,32 @@ Two things `trace` deliberately does not do:
   with the other tucked, you get one leg. A walk needs two, so you must draw the
   missing one. Poses are not anatomy.
 
-Outline tracers (vtracer, potrace) are the wrong tool here and it is worth
-knowing why: they return the two *sides* of every stroke as one closed loop, so
-you would have to take its medial axis anyway to get back to a centreline. Worse,
-a limb cut out of an outline needs a new closing edge across the joint that does
-not exist in the source — you would be authoring, not extracting. A medial axis
-already forks where a leg meets a body. Reach for an outline tracer only when the
-art is genuinely filled shapes rather than strokes.
+### Why strokes are skeletonised and filled shapes are not
+
+An outline tracer returns the two *sides* of every stroke as one closed loop.
+For a drawn line that is the wrong shape twice over: you would have to take its
+medial axis anyway to recover a centreline, and a limb cut out of an outline
+needs a new closing edge across the joint that does not exist in the source —
+authoring, not extracting. A medial axis already forks where a leg meets a body.
+
+But a *filled* shape has no centreline to find. A tapered beak or a solid foot
+has no single width, so `through(points, { width })` flattens it.
+
+So `trace` uses both, and picks per region. Runs that hold one width become
+centrelines; runs whose width varies get handed to **potrace** for an exact
+outline, one region at a time so each stays one shape and one part. On the
+reference logo that is 10 strokes and 5 outlines, and it scores **93.3%** —
+slightly ahead of running potrace over the whole image (93.2%) and well ahead of
+skeletonising everything (91.1%), while staying riggable, which whole-image
+outline tracing is not.
+
+The rule underneath: **an outline tracer is safe exactly where one traced region
+is also one animatable part.** A beak, yes. A whole bird, no.
+
+potrace is optional. Without it those shapes fall back to constant-width strokes
+and `trace` says so; install it with `brew install potrace` for the better
+result. Note that `magick in.png out.svg` also silently delegates to potrace, so
+that route has the same properties.
 
 ## 2. Group the strokes into parts
 

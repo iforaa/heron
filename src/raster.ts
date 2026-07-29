@@ -227,6 +227,63 @@ export interface Stroke {
    * happen to touch, so these are the places to consider splitting.
    */
   corners: Vec2[];
+  /** Every centreline pixel, unsimplified. Used to claim the ink around it. */
+  centreline: Vec2[];
+}
+
+/**
+ * Splits the ink between the strokes, by nearest centreline.
+ *
+ * A stroke's own pixels are the ones closer to it than to any other stroke,
+ * which is a Voronoi partition grown from the skeleton — a flood fill outward
+ * from every centreline at once, so the frontiers meet exactly halfway. This is
+ * what lets one shape be pulled out of the drawing on its own, which is needed
+ * to hand a single filled region to an outline tracer without dragging its
+ * neighbours along.
+ *
+ * Returns a label per pixel: the index of the owning stroke, or -1 for
+ * background.
+ */
+export function labelRegions(mask: Mask, runs: Stroke[]): Int32Array {
+  const { width: w, height: h, data } = mask;
+  const label = new Int32Array(w * h).fill(-1);
+  let head = 0;
+  const queue: number[] = [];
+
+  runs.forEach((s, id) => {
+    for (const [x, y] of s.centreline) {
+      const i = y * w + x;
+      if (data[i] && label[i] === -1) {
+        label[i] = id;
+        queue.push(i);
+      }
+    }
+  });
+
+  // Breadth-first from all centrelines simultaneously, so distance from the
+  // frontier grows uniformly and ties break at the true midpoint.
+  while (head < queue.length) {
+    const i = queue[head++];
+    const x = i % w;
+    const y = (i - x) / w;
+    for (const [dx, dy] of NB) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const j = ny * w + nx;
+      if (!data[j] || label[j] !== -1) continue;
+      label[j] = label[i];
+      queue.push(j);
+    }
+  }
+  return label;
+}
+
+/** The ink belonging to a subset of strokes, as a mask of its own. */
+export function maskOfRegions(mask: Mask, label: Int32Array, ids: Set<number>): Mask {
+  const data = new Uint8Array(mask.width * mask.height);
+  for (let i = 0; i < data.length; i++) if (ids.has(label[i])) data[i] = 1;
+  return { width: mask.width, height: mask.height, data };
 }
 
 /** Turn angle in degrees at each interior point that exceeds `limit`. */
@@ -503,6 +560,7 @@ export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6): Stroke[] {
         length: Math.round(polylineLength(raw)),
         closed: Math.hypot(last[0] - first[0], last[1] - first[1]) < 3,
         corners: sharpCorners(points),
+        centreline: raw,
       };
     })
     // A run shorter than it is wide is not a stroke. It is the remnant of a

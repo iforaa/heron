@@ -44,11 +44,14 @@ export { walkCycle, bodyBob, sway, pulse, applyGait } from './behaviors/walk.ts'
 export type { WalkOptions, WalkTracks, BobOptions } from './behaviors/walk.ts';
 
 export { trace } from './trace.ts';
+export { hasPotrace, outlinePaths } from './outline.ts';
+export type { OutlineOptions } from './outline.ts';
 export type { TraceOptions, TraceResult } from './trace.ts';
 export { match, formatMatch } from './match.ts';
 export type { MatchReport, MatchOptions, WidthProbe } from './match.ts';
 export {
   loadImage, rasterise, inkMask, inkColour, distanceField,
   skeletonise, traceSkeleton, simplify, strokes, encodePng, junctions, crossingNumber,
+  labelRegions, maskOfRegions,
 } from './raster.ts';
 export type { Bitmap, Mask, Stroke } from './raster.ts';

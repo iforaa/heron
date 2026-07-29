@@ -42,7 +42,7 @@
  * Read every one before animating.
  */
 
-import { character, layer, through, type Character } from '../src/index.ts';
+import { character, layer, path, through, type Character } from '../src/index.ts';
 
 const INK = '#3ba064';
 
@@ -93,23 +93,15 @@ export const tenforeTraced: Character = character(
         [687, 537], [707, 585], [714, 607],
       ], { stroke: INK, width: 36.1 });
 
-      // s4  box [265 65 437 379]  length 477px  width 36.1
-      // ! width varies 1.54x along this run: probably a filled shape,
-      //   not a stroke. Redraw it as path({ d }) or polygon() if it should taper.
-      through([
-        [265, 65], [299, 85], [337, 113], [339, 111], [379, 112], [393, 114],
-        [404, 118], [417, 127], [423, 134], [433, 153], [437, 179], [432, 209],
-        [417, 244], [385, 294], [363, 336], [360, 346], [357, 370], [358, 375],
-        [364, 379],
-      ], { stroke: INK, width: 36.1 });
+      // s4  box [265 65 437 379]  length 477px
+      //   filled shape: width varied 1.54x, so this is its exact
+      //   outline rather than a constant-width stroke.
+      path({ d: 'M 250 50 c -7 5 -10 14 -6 22 1 4 6 8 31 28 9 8 21 18 30 27 l 10 9 12 -11 c 6 -6 11 -12 10 -12 -1 -2 3 0 11 4 4 3 8 6 8 6 0 0 2 2 4 3 2 1 4 3 4 3 1 1 4 1 7 1 19 -1 35 8 42 23 5 9 5 10 6 18 2 15 -2 33 -12 54 -6 12 -9 17 -25 42 -8 12 -17 27 -20 32 -6 12 -14 27 -14 29 0 1 0 2 -1 3 -1 2 -6 15 -7 22 -2 8 -2 29 0 35 2 7 3 10 4 10 1 0 20 -20 20 -21 0 0 0 -1 0 -1 0 0 0 -2 1 -3 0 -3 7 -12 10 -14 0 -1 1 -3 2 -5 2 -7 9 -22 13 -30 8 -14 9 -16 18 -31 5 -8 10 -15 10 -16 1 -1 3 -3 4 -5 1 -1 2 -3 2 -4 0 -1 0 -1 1 -1 1 0 1 0 1 -1 0 0 2 -4 5 -9 6 -12 13 -25 16 -34 1 -2 2 -4 2 -6 0 -1 2 -6 4 -13 2 -9 2 -12 2 -27 0 -9 0 -17 -1 -19 0 -1 -2 -5 -3 -9 -6 -22 -25 -42 -46 -50 -9 -3 -14 -4 -28 -5 l -13 -1 -9 -5 c -9 -5 -13 -7 -22 -12 -2 -1 -7 -4 -10 -6 -9 -5 -30 -15 -36 -17 -11 -4 -20 -6 -26 -6 -6 0 -7 0 -11 3 z', fill: INK });
 
-      // s5  box [401 426 645 584]  length 329px  width 36.8
-      // ! width varies 1.63x along this run: probably a filled shape,
-      //   not a stroke. Redraw it as path({ d }) or polygon() if it should taper.
-      through([
-        [401, 426], [407, 443], [421, 467], [449, 497], [489, 525], [512, 537],
-        [530, 544], [546, 570], [596, 580], [645, 584],
-      ], { stroke: INK, width: 36.8 });
+      // s5  box [401 426 645 584]  length 329px
+      //   filled shape: width varied 1.63x, so this is its exact
+      //   outline rather than a constant-width stroke.
+      path({ d: 'M 399 406 c -6 1 -7 1 -10 5 -5 4 -6 9 -6 15 1 5 3 13 5 16 1 1 1 2 1 3 0 3 16 31 20 36 1 1 3 3 4 5 7 9 37 37 40 37 0 0 1 1 3 2 5 5 28 18 46 27 4 2 10 5 12 6 2 1 5 3 7 5 3 3 3 4 10 4 2 1 5 1 13 2 1 1 5 -3 16 -13 11 -12 13 -14 11 -15 -3 -1 -21 -7 -24 -9 -2 0 -4 -1 -5 -2 -19 -7 -51 -24 -64 -34 -18 -13 -35 -29 -44 -43 -6 -9 -12 -22 -14 -29 -2 -9 -5 -13 -9 -15 -3 -3 -9 -4 -12 -3 z M 560 557 l -14 13 3 4 c 1 2 2 3 1 3 0 0 1 1 2 2 0 1 1 2 1 2 -1 0 0 1 1 2 0 1 1 2 1 2 -1 0 -1 1 0 2 1 0 2 2 2 3 0 1 1 3 2 4 1 2 2 3 2 3 0 3 2 6 5 7 2 0 19 0 39 0 46 0 55 -1 61 -7 8 -8 6 -22 -3 -27 -2 -2 -6 -4 -10 -5 -4 0 -8 -2 -10 -2 -4 -1 -14 -4 -18 -5 -2 0 -6 -2 -9 -2 -3 -1 -8 -2 -10 -3 -2 -1 -9 -3 -13 -4 -5 -2 -11 -4 -13 -5 -2 0 -5 -1 -5 -1 -1 0 -8 6 -15 14 z', fill: INK });
 
       // s6  box [504 738 569 954]  length 284px  width 36
       // ! turns sharply at (508, 953)
@@ -145,26 +137,20 @@ export const tenforeTraced: Character = character(
         [433, 804], [443, 812], [454, 842], [456, 860], [453, 874], [447, 878],
       ], { stroke: INK, width: 35.4 });
 
-      // s12  box [446 954 508 954]  length 65px  width 38.5
-      // ! width varies 1.39x along this run: probably a filled shape,
-      //   not a stroke. Redraw it as path({ d }) or polygon() if it should taper.
-      through([
-        [446, 954], [508, 954],
-      ], { stroke: INK, width: 38.5 });
+      // s12  box [446 954 508 954]  length 65px
+      //   filled shape: width varied 1.39x, so this is its exact
+      //   outline rather than a constant-width stroke.
+      path({ d: 'M 471 935 c -23 5 -32 8 -37 14 -8 7 0 15 19 20 8 3 28 6 33 6 2 0 6 -3 13 -10 l 10 -10 -10 -11 -10 -10 -7 0 c -4 0 -9 1 -11 1 z', fill: INK });
 
-      // s13  box [424 860 437 890]  length 35px  width 6
-      // ! width varies 5.22x along this run: probably a filled shape,
-      //   not a stroke. Redraw it as path({ d }) or polygon() if it should taper.
-      through([
-        [424, 860], [425, 878], [437, 890],
-      ], { stroke: INK, width: 6 });
+      // s13  box [424 860 437 890]  length 35px
+      //   filled shape: width varied 5.22x, so this is its exact
+      //   outline rather than a constant-width stroke.
+      path({ d: 'M 424 863 c -1 2 -1 7 -1 11 -1 7 -1 9 -3 11 -3 2 -4 2 -4 -2 0 -2 0 -2 -1 -1 -3 2 -2 4 0 7 2 1 4 1 12 1 9 0 9 0 12 -3 l 3 -3 -5 -5 c -5 -6 -6 -6 -7 -4 -1 1 -1 1 -2 -2 0 -4 -3 -13 -4 -13 0 0 0 1 0 3 z', fill: INK });
 
-      // s14  box [434 860 447 878]  length 24px  width 12
-      // ! width varies 13.93x along this run: probably a filled shape,
-      //   not a stroke. Redraw it as path({ d }) or polygon() if it should taper.
-      through([
-        [434, 860], [434, 865], [447, 878],
-      ], { stroke: INK, width: 12 });
+      // s14  box [434 860 447 878]  length 24px
+      //   filled shape: width varied 13.93x, so this is its exact
+      //   outline rather than a constant-width stroke.
+      path({ d: 'M 439 857 c 1 2 1 4 1 5 -1 3 -4 2 -5 -1 -1 -4 -2 -1 -2 6 l -1 7 5 5 5 4 3 -3 c 2 -3 2 -4 2 -8 0 -9 -1 -14 -6 -17 l -3 -2 1 4 z', fill: INK });
     });
   },
 );

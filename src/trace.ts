@@ -16,7 +16,11 @@
 
 import { basename, extname } from 'node:path';
 
-import { type Stroke, inkColour, inkMask, junctions, loadImage, skeletonise, strokes } from './raster.ts';
+import {
+  type Stroke, inkColour, inkMask, junctions, labelRegions, loadImage,
+  maskOfRegions, skeletonise, strokes,
+} from './raster.ts';
+import { hasPotrace, outlinePaths } from './outline.ts';
 import type { Vec2 } from './scene.ts';
 
 export interface TraceOptions {
@@ -32,6 +36,8 @@ export interface TraceOptions {
   out?: string;
   /** Module specifier to import from. Local examples need a relative path. */
   importFrom?: string;
+  /** Use potrace for tapering regions when available. On by default. */
+  outlines?: boolean;
 }
 
 export interface TraceResult {
@@ -44,6 +50,8 @@ export interface TraceResult {
   varying: number;
   /** Skeleton forks, in source coordinates. The best available guess at joints. */
   joints: Vec2[];
+  /** Tapering regions reproduced as exact outlines rather than as strokes. */
+  outlined: number;
 }
 
 /** Above this, a run is tapering rather than holding one width. */
@@ -82,13 +90,46 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
   const varying = found.filter((k) => k.widthVariation > TAPER).length;
   const self = o.out ?? 'scene.ts';
 
+  /**
+   * Tapering regions get an exact outline instead of a fudged constant width.
+   * Each is traced on its own so it stays one shape and one part; tracing them
+   * together would fuse touching shapes back into a single path, which is the
+   * whole reason an outline tracer cannot import a drawing by itself.
+   */
+  const useOutlines = (o.outlines ?? true) && hasPotrace();
+  const label = useOutlines ? labelRegions(mask, found) : null;
+  const outline = new Map<number, string>();
+  if (label) {
+    found.forEach((k, i) => {
+      if (k.widthVariation <= TAPER) return;
+      const paths = outlinePaths(maskOfRegions(mask, label, new Set([i])));
+      // A region can come back as several contours — separate blobs, or a shape
+      // with a hole. They are still one part, and potrace winds them so nonzero
+      // fill does the right thing, so they concatenate into one path rather
+      // than being discarded.
+      if (paths?.length && paths.join('').length > 8) outline.set(i, paths.join(' '));
+    });
+  }
+
   const body = found.map((k, i) => {
     const xs = k.points.map((p) => p[0] / s);
     const ys = k.points.map((p) => p[1] / s);
     const box = `[${Math.round(Math.min(...xs))} ${Math.round(Math.min(...ys))} ${Math.round(Math.max(...xs))} ${Math.round(Math.max(...ys))}]`;
+
+    // A tapering region that potrace could resolve is emitted as its true
+    // outline, so it is exact rather than approximated by one width.
+    const traced = outline.get(i);
+    if (traced) {
+      return `    // s${i}  box ${box}  length ${Math.round(k.length / s)}px\n`
+        + `    //   filled shape: width varied ${k.widthVariation}x, so this is its exact\n`
+        + `    //   outline rather than a constant-width stroke.\n`
+        + `    path({ d: '${traced}', fill: INK });`;
+    }
+
     const taper = k.widthVariation > TAPER
       ? `\n    // ! width varies ${k.widthVariation}x along this run: probably a filled shape,`
-        + `\n    //   not a stroke. Redraw it as path({ d }) or polygon() if it should taper.`
+        + `\n    //   not a stroke, and no outline tracer was available to resolve it.`
+        + `\n    //   Install potrace and re-run, or redraw it with path({ d }) by hand.`
       : '';
     const bends = k.corners.length
       ? `\n    // ! turns sharply at ${k.corners.map((c) => `(${Math.round(c[0] / s)}, ${Math.round(c[1] / s)})`).join(' ')}`
@@ -149,7 +190,7 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
  * Read every one before animating.
  */
 
-import { character, layer, through, type Character } from '${o.importFrom ?? '@heron/core'}';
+import { character, layer, path, through, type Character } from '${o.importFrom ?? '@heron/core'}';
 
 const INK = '${colour}';
 
@@ -174,5 +215,6 @@ export default ${name};
   return {
     source, strokes: found, colour, width: W, height: H, varying,
     joints: joints.map((j): Vec2 => [Math.round(j[0] / s), Math.round(j[1] / s)]),
+    outlined: outline.size,
   };
 }

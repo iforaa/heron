@@ -188,3 +188,49 @@ test('a smoothly curving stroke reports no corners', () => {
   assert.ok(arcRun, 'the arc traced');
   assert.deepEqual(arcRun!.corners, [], `a smooth arc has no corners, got ${JSON.stringify(arcRun!.corners)}`);
 });
+
+test('outline tracing lands in top-left coordinates, not flipped', async () => {
+  // potrace works bottom-left like PostScript and compensates with a wrapping
+  // transform. That transform is baked away on import, and if the sign is wrong
+  // every filled shape lands mirrored vertically — which still renders, still
+  // looks like artwork, and is entirely wrong.
+  const { hasPotrace, outlinePaths } = await import('../src/index.ts');
+  const { pathPoints } = await import('../src/render.ts');
+  if (!hasPotrace()) return; // optional dependency
+
+  const m = blank(200, 200);
+  // A block well off-centre, so a flip cannot be mistaken for symmetry.
+  for (let y = 20; y < 60; y++) for (let x = 30; x < 90; x++) m.data[y * 200 + x] = 1;
+
+  const paths = outlinePaths(m);
+  assert.ok(paths && paths.length === 1, 'one block traces to one contour');
+  const pts = pathPoints(paths![0]);
+  const ys = pts.map((p) => p[1]);
+  const xs = pts.map((p) => p[0]);
+  assert.ok(Math.min(...ys) >= 15 && Math.max(...ys) <= 65, `y should be 20..60, got ${Math.min(...ys)}..${Math.max(...ys)}`);
+  assert.ok(Math.min(...xs) >= 25 && Math.max(...xs) <= 95, `x should be 30..90, got ${Math.min(...xs)}..${Math.max(...xs)}`);
+});
+
+test('ink is split between strokes at the midpoint between them', async () => {
+  const { labelRegions, maskOfRegions } = await import('../src/index.ts');
+  const m = blank(200, 120);
+  hline(m, 20, 180, 30, 13);
+  hline(m, 20, 180, 90, 13);
+
+  const found = strokes(m);
+  assert.equal(found.length, 2, 'two bands, two strokes');
+  const label = labelRegions(m, found);
+  const top = found[0].points[0][1] < found[1].points[0][1] ? 0 : 1;
+
+  // Each band's own pixels go to it, and nothing is left unclaimed.
+  assert.equal(label[30 * 200 + 100], top, 'the upper band claims its own row');
+  assert.equal(label[90 * 200 + 100], 1 - top, 'the lower band claims its own row');
+  let claimed = 0;
+  for (let i = 0; i < label.length; i++) if (label[i] >= 0) claimed++;
+  let ink = 0;
+  for (const v of m.data) ink += v;
+  assert.equal(claimed, ink, 'every ink pixel belongs to exactly one stroke');
+
+  const justTop = maskOfRegions(m, label, new Set([top]));
+  assert.equal(justTop.data[90 * 200 + 100], 0, 'isolating one stroke excludes the other');
+});

@@ -116,8 +116,11 @@ async function main(): Promise<void> {
       console.log(`  measured widths: ${[...new Set(w.map((v) => v.toFixed(0)))].sort((a, b) => +a - +b).join(', ')} px`);
     }
     const bends = res.strokes.filter((s) => s.corners.length).length;
-    if (res.varying) {
-      console.log(`  ! ${res.varying} run(s) taper rather than hold one width - probably filled shapes, not strokes`);
+    if (res.outlined) {
+      console.log(`  ${res.outlined} filled shape(s) traced to exact outlines by potrace, not approximated as strokes`);
+    }
+    if (res.varying - res.outlined > 0) {
+      console.log(`  ! ${res.varying - res.outlined} run(s) taper but could not be outlined - still emitted as constant-width strokes`);
     }
     if (bends) {
       console.log(`  ! ${bends} run(s) turn a sharp corner - each may be two parts traced as one`);
