@@ -139,3 +139,52 @@ test('trace then match round-trips the reference logo faithfully', async () => {
   assert.ok(main.length >= 4, 'the logo has several long runs');
   for (const w of main) assert.ok(w > 30 && w < 45, `long runs are ~36px wide, measured ${w}`);
 });
+
+test('junction remnants are dropped, real strokes are not', async () => {
+  const { junctions } = await import('../src/index.ts');
+  // A T: the crossbar, the stem, and — at the meeting point — a stub of
+  // leftover skeleton that is 40px wide and barely any length.
+  const m = blank(200, 200);
+  hline(m, 20, 180, 60, 40);
+  for (let y = 60; y < 180; y++) for (let x = 80; x < 120; x++) m.data[y * 200 + x] = 1;
+
+  for (const s of strokes(m)) {
+    assert.ok(s.length >= s.width, `kept a ${s.length}px run that is ${s.width}px wide`);
+  }
+  // The fork itself is still reported: it is the best guess at where a joint is.
+  const forks = junctions(skeletonise(m));
+  assert.ok(forks.length >= 1, 'the T has a fork');
+  assert.ok(Math.abs(forks[0][0] - 100) < 25, `fork near the stem, got x=${forks[0][0]}`);
+});
+
+test('a run that turns a hard corner is flagged as possibly two parts', () => {
+  // The real case: a leg traced straight into the foot it stands on, because
+  // they are one connected run of ink.
+  const m = blank(200, 200);
+  for (let y = 20; y < 150; y++) for (let x = 96; x < 106; x++) m.data[y * 200 + x] = 1;
+  for (let x = 96; x < 180; x++) for (let y = 145; y < 155; y++) m.data[y * 200 + x] = 1;
+
+  const found = strokes(m).filter((s) => s.length > 50);
+  assert.ok(found.length >= 1);
+  const bent = found.find((s) => s.corners.length > 0);
+  assert.ok(bent, 'the right-angle turn should be reported');
+  assert.ok(Math.abs(bent!.corners[0][1] - 150) < 20, `corner near the bend, got y=${bent!.corners[0][1]}`);
+});
+
+test('a smoothly curving stroke reports no corners', () => {
+  // The flag is only useful if it stays quiet on ordinary artwork.
+  const m = blank(240, 240);
+  for (let a = 0; a < 200; a++) {
+    const t = (a / 200) * Math.PI;
+    for (let d = -5; d <= 5; d++) {
+      for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        const x = Math.round(120 + (80 + d) * Math.cos(t)) + ox;
+        const y = Math.round(120 + (80 + d) * Math.sin(t)) + oy;
+        if (x > 0 && y > 0 && x < 240 && y < 240) m.data[y * 240 + x] = 1;
+      }
+    }
+  }
+  const arcRun = strokes(m).find((s) => s.length > 100);
+  assert.ok(arcRun, 'the arc traced');
+  assert.deepEqual(arcRun!.corners, [], `a smooth arc has no corners, got ${JSON.stringify(arcRun!.corners)}`);
+});

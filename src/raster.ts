@@ -221,9 +221,81 @@ export interface Stroke {
   /** Centreline length in pixels. */
   length: number;
   closed: boolean;
+  /**
+   * Points where the run turns sharply. A drawn stroke curves; a hard corner
+   * usually means two different things were traced as one run because they
+   * happen to touch, so these are the places to consider splitting.
+   */
+  corners: Vec2[];
+}
+
+/** Turn angle in degrees at each interior point that exceeds `limit`. */
+function sharpCorners(pts: Vec2[], limit = 55): Vec2[] {
+  const out: Vec2[] = [];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const ax = pts[i][0] - pts[i - 1][0];
+    const ay = pts[i][1] - pts[i - 1][1];
+    const bx = pts[i + 1][0] - pts[i][0];
+    const by = pts[i + 1][1] - pts[i][1];
+    const la = Math.hypot(ax, ay);
+    const lb = Math.hypot(bx, by);
+    if (la < 4 || lb < 4) continue;
+    const cos = Math.max(-1, Math.min(1, (ax * bx + ay * by) / (la * lb)));
+    if ((Math.acos(cos) * 180) / Math.PI > limit) out.push(pts[i]);
+  }
+  return out;
 }
 
 const key = (a: number, b: number) => (a < b ? a * 4194304 + b : b * 4194304 + a);
+
+/**
+ * The crossing number: how many 8-connected *groups* of neighbours a pixel has,
+ * counted as 0-to-1 transitions around the ring. 1 is a tip, 2 is mid-run,
+ * 3 or more is a genuine fork.
+ *
+ * Counting neighbour pixels instead is wrong, and wrong in a way that looks
+ * plausible right up until you check it. A thinned line still has staircase
+ * corners where three pixels are mutually adjacent, so a plain neighbour count
+ * reports 3 or 4 along perfectly ordinary runs: on one logo it found 1954
+ * "junctions" among 5106 pixels. By crossing number the same skeleton has 14
+ * tips, 5082 run pixels and 10 junctions — which is what the drawing has.
+ * Everything downstream depends on this, because a false junction cuts a
+ * stroke and every cut end renders as a visible gap.
+ */
+export function crossingNumber(m: Mask, i: number): number {
+  const x = i % m.width;
+  const y = (i - x) / m.width;
+  const on = (k: number): number => {
+    const nx = x + NB[k][0];
+    const ny = y + NB[k][1];
+    return nx >= 0 && ny >= 0 && nx < m.width && ny < m.height ? m.data[ny * m.width + nx] : 0;
+  };
+  let a = 0;
+  for (let k = 0; k < 8; k++) if (!on(k) && on((k + 1) % 8)) a++;
+  return a;
+}
+
+/**
+ * Where runs meet on the skeleton.
+ *
+ * These are the single most useful hint the pixels can offer about anatomy: a
+ * medial axis forks exactly where a limb leaves a body, so a junction is the
+ * best available guess at a joint. It is only a guess — the drawing decides —
+ * but it beats reading a coordinate off the image by eye.
+ */
+export function junctions(skel: Mask, mergeWithin = 10): Vec2[] {
+  const raw: Vec2[] = [];
+  for (let i = 0; i < skel.data.length; i++) {
+    if (skel.data[i] && crossingNumber(skel, i) >= 3) raw.push([i % skel.width, Math.floor(i / skel.width)]);
+  }
+  // A fork is often two or three adjacent pixels; report the place, not each pixel.
+  const out: Vec2[] = [];
+  for (const p of raw) {
+    const near = out.find((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) <= mergeWithin);
+    if (!near) out.push(p);
+  }
+  return out;
+}
 
 /**
  * Walks a skeleton into polylines, cut at endpoints and junctions.
@@ -247,39 +319,11 @@ export function traceSkeleton(skel: Mask, minBranch = 6): Vec2[][] {
     return out;
   };
 
-  /**
-   * The crossing number: how many 8-connected *groups* of neighbours a pixel
-   * has, counted as 0-to-1 transitions around the ring.
-   *
-   * Counting neighbour pixels instead is wrong, and wrong in a way that looks
-   * plausible right up until you check it. A thinned line still has staircase
-   * corners where three pixels are mutually adjacent, so a plain neighbour
-   * count reports 3 or 4 along perfectly ordinary runs: on this logo it found
-   * 1954 "junctions" among 5106 pixels. By crossing number the same skeleton
-   * has 14 tips, 5082 run pixels and 10 junctions — which is what the drawing
-   * has. Everything downstream depends on this being right, because a false
-   * junction cuts a stroke, and every cut end renders as a gap.
-   */
-  const cross = (i: number): number => {
-    const x = i % w;
-    const y = (i - x) / w;
-    let a = 0;
-    for (let k = 0; k < 8; k++) {
-      const p = (n: number): number => {
-        const nx = x + NB[n][0];
-        const ny = y + NB[n][1];
-        return nx >= 0 && ny >= 0 && nx < w && ny < h ? data[idx(nx, ny)] : 0;
-      };
-      if (!p(k) && p((k + 1) % 8)) a++;
-    }
-    return a;
-  };
-
   const deg = new Uint8Array(w * h);
   const live: number[] = [];
   for (let i = 0; i < w * h; i++) {
     if (!data[i]) continue;
-    deg[i] = cross(i);
+    deg[i] = crossingNumber(skel, i);
     live.push(i);
   }
 
@@ -451,14 +495,22 @@ export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6): Stroke[] {
       const hi = ws[Math.floor(ws.length * 0.9)] ?? mid;
       const first = raw[0];
       const last = raw[raw.length - 1];
+      const points = simplify(raw, epsilon);
       return {
-        points: simplify(raw, epsilon),
+        points,
         width: Math.round(mid * 10) / 10,
         widthVariation: lo > 0 ? Math.round((hi / lo) * 100) / 100 : 1,
         length: Math.round(polylineLength(raw)),
         closed: Math.hypot(last[0] - first[0], last[1] - first[1]) < 3,
+        corners: sharpCorners(points),
       };
     })
+    // A run shorter than it is wide is not a stroke. It is the remnant of a
+    // junction after the branches leading into it were walked away, and it
+    // renders as a round blob of full stroke width sitting inside ink that is
+    // already there. Comparing against the run's own measured width rather than
+    // a pixel constant means this scales to any image without a flag.
+    .filter((s) => s.length >= s.width)
     .sort((a, b) => b.length - a.length);
 }
 

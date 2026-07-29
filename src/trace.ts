@@ -16,7 +16,7 @@
 
 import { basename, extname } from 'node:path';
 
-import { type Stroke, inkColour, inkMask, loadImage, strokes } from './raster.ts';
+import { type Stroke, inkColour, inkMask, junctions, loadImage, skeletonise, strokes } from './raster.ts';
 import type { Vec2 } from './scene.ts';
 
 export interface TraceOptions {
@@ -42,6 +42,8 @@ export interface TraceResult {
   height: number;
   /** Strokes whose width is not constant, so probably filled shapes. */
   varying: number;
+  /** Skeleton forks, in source coordinates. The best available guess at joints. */
+  joints: Vec2[];
 }
 
 /** Above this, a run is tapering rather than holding one width. */
@@ -71,6 +73,7 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
   const mask = inkMask(bm, o.threshold);
   const colour = inkColour(bm, mask);
   const found = strokes(mask, o.epsilon ?? 1.2, o.minBranch ?? 6);
+  const joints = junctions(skeletonise(mask));
 
   const s = bm.scale;
   const W = Math.round(bm.width / s);
@@ -84,14 +87,23 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
     const ys = k.points.map((p) => p[1] / s);
     const box = `[${Math.round(Math.min(...xs))} ${Math.round(Math.min(...ys))} ${Math.round(Math.max(...xs))} ${Math.round(Math.max(...ys))}]`;
     const taper = k.widthVariation > TAPER
-      ? `\n      // width varies ${k.widthVariation}x along this run: probably a filled shape,`
-        + `\n      // not a stroke. Redraw it as path({ d }) or polygon() if it should taper.`
+      ? `\n    // ! width varies ${k.widthVariation}x along this run: probably a filled shape,`
+        + `\n    //   not a stroke. Redraw it as path({ d }) or polygon() if it should taper.`
+      : '';
+    const bends = k.corners.length
+      ? `\n    // ! turns sharply at ${k.corners.map((c) => `(${Math.round(c[0] / s)}, ${Math.round(c[1] / s)})`).join(' ')}`
+        + `\n    //   A drawn stroke curves; a hard corner usually means two things were`
+        + `\n    //   traced as one run because they touch. Consider splitting it there.`
       : '';
     const opts = [`stroke: INK`, `width: ${Math.round((k.width / s) * 10) / 10}`, k.closed ? 'closed: true' : '']
       .filter(Boolean).join(', ');
-    return `    // s${i}  box ${box}  length ${Math.round(k.length / s)}px${taper}\n`
+    return `    // s${i}  box ${box}  length ${Math.round(k.length / s)}px  width ${Math.round((k.width / s) * 10) / 10}${taper}${bends}\n`
       + `    through([\n${pointList(k.points, s)},\n    ], { ${opts} });`;
   }).join('\n\n');
+
+  const jointList = joints.length
+    ? joints.map((j) => `(${Math.round(j[0] / s)}, ${Math.round(j[1] / s)})`).join('  ')
+    : '(none found)';
 
   const source = `/**
  * Traced from ${basename(file)} by \`heron trace\`.
@@ -125,6 +137,16 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
  *     one part; some are the seam between two.
  *   - A pose is not anatomy. If the reference shows a limb tucked or hidden, it
  *     still needs to exist as a part before it can move.
+ *
+ * CANDIDATE JOINTS. These are where the skeleton forks, which is where one run
+ * of ink leaves another — so they are the best guess the pixels can offer at
+ * where the joints are, and they are measured rather than eyeballed. Treat them
+ * as suggestions: the drawing decides what is actually a joint.
+ *
+ *   ${jointList}
+ *
+ * Lines below marked \`// !\` are things the trace noticed but could not resolve.
+ * Read every one before animating.
  */
 
 import { character, layer, through, type Character } from '${o.importFrom ?? '@heron/core'}';
@@ -149,5 +171,8 @@ ${body.split('\n').map((l) => (l ? `  ${l}` : l)).join('\n')}
 export default ${name};
 `;
 
-  return { source, strokes: found, colour, width: W, height: H, varying };
+  return {
+    source, strokes: found, colour, width: W, height: H, varying,
+    joints: joints.map((j): Vec2 => [Math.round(j[0] / s), Math.round(j[1] / s)]),
+  };
 }

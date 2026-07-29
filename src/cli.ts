@@ -115,9 +115,14 @@ async function main(): Promise<void> {
     if (w.length) {
       console.log(`  measured widths: ${[...new Set(w.map((v) => v.toFixed(0)))].sort((a, b) => +a - +b).join(', ')} px`);
     }
+    const bends = res.strokes.filter((s) => s.corners.length).length;
     if (res.varying) {
-      console.log(`  ${res.varying} run(s) taper rather than hold one width - marked in the file as probable filled shapes`);
+      console.log(`  ! ${res.varying} run(s) taper rather than hold one width - probably filled shapes, not strokes`);
     }
+    if (bends) {
+      console.log(`  ! ${bends} run(s) turn a sharp corner - each may be two parts traced as one`);
+    }
+    console.log(`  ${res.joints.length} candidate joint(s) where runs fork: ${res.joints.slice(0, 8).map((j) => `(${j[0]},${j[1]})`).join(' ')}${res.joints.length > 8 ? ' ...' : ''}`);
     console.log(`  geometry only. Next: heron match ${out} ${file}, then group the strokes into jointed parts.`);
     return;
   }

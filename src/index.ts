@@ -49,6 +49,6 @@ export { match, formatMatch } from './match.ts';
 export type { MatchReport, MatchOptions, WidthProbe } from './match.ts';
 export {
   loadImage, rasterise, inkMask, inkColour, distanceField,
-  skeletonise, traceSkeleton, simplify, strokes, encodePng,
+  skeletonise, traceSkeleton, simplify, strokes, encodePng, junctions, crossingNumber,
 } from './raster.ts';
 export type { Bitmap, Mask, Stroke } from './raster.ts';
