@@ -14,7 +14,7 @@
  */
 
 import {
-  character, part, layer, line, ellipse, path,
+  character, part, layer, line, ellipse, path, arc, through,
   walkCycle, bodyBob, sway, applyGait,
   type Character, type Vec2,
 } from '../src/index.ts';
@@ -27,22 +27,7 @@ const FAR = '#8fc7a8';
 const RING_W = 30;
 const LINE_W = 30;
 
-// --- the ring ----------------------------------------------------------------
-
-const CX = 513;
-const CY = 424;
-const R = 361;
-
-/** Arc of the ring between two clockwise-from-3-o'clock angles. */
-function ring(a0: number, a1: number): string {
-  const at = (a: number): Vec2 => [
-    CX + R * Math.cos((a * Math.PI) / 180),
-    CY + R * Math.sin((a * Math.PI) / 180),
-  ];
-  const [x0, y0] = at(a0);
-  const [x1, y1] = at(a1);
-  return `M${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(1)},${y1.toFixed(1)}`;
-}
+const RING = { cx: 513, cy: 424, r: 361 };
 
 // --- the bird ----------------------------------------------------------------
 
@@ -83,29 +68,45 @@ export const tenfore: Character = character(
     layer('frame', () => {
       // Two arcs, not one: the mark's ring is broken where the beak crosses it
       // at the top left, and again at the bottom right.
-      path({ d: ring(85, 234), stroke: GREEN, width: RING_W, cap: 'round' });
-      path({ d: ring(252, 419), stroke: GREEN, width: RING_W, cap: 'round' });
+      arc({ ...RING, from: 85, to: 234, stroke: GREEN, width: RING_W, cap: 'round' });
+      arc({ ...RING, from: 252, to: 419, stroke: GREEN, width: RING_W, cap: 'round' });
     });
 
     part('body', { pivot: [500, 470] }, () => {
       leg('legFar', HIP_FAR, FAR);
 
+      // Every outline below is a list of points that lie ON the curve, so each
+      // one is a position readable straight off the reference art. None of them
+      // is a Bezier handle that has to be guessed and then corrected by render.
+
       // Back and tail: one sweep from the neck root out to the tail tip.
-      path({ d: 'M368,378 C420,338 500,336 566,376 C632,416 682,500 706,606', stroke: GREEN, width: LINE_W });
+      through([[368, 378], [462, 347], [566, 376], [652, 466], [706, 606]],
+        { stroke: GREEN, width: LINE_W });
       // Breast and belly, closing under the tail.
-      path({ d: 'M336,432 C318,486 340,540 396,566 C452,590 546,592 662,574', stroke: GREEN, width: LINE_W });
+      through([[336, 432], [338, 510], [396, 566], [507, 586], [662, 574]],
+        { stroke: GREEN, width: LINE_W });
       // Folded wing.
-      path({ d: 'M402,410 C432,486 494,540 578,562', stroke: GREEN, width: LINE_W });
+      through([[402, 410], [470, 506], [578, 562]], { stroke: GREEN, width: LINE_W });
 
       part('neck', { pivot: [352, 400] }, () => {
         // The neck is a tube: two near-parallel edges bulging left on the way up.
-        path({ d: 'M336,432 C300,380 292,320 306,262 C316,220 334,182 352,158', stroke: GREEN, width: 26 });
-        path({ d: 'M368,382 C350,328 348,276 368,234 C380,208 398,196 414,202', stroke: GREEN, width: 26 });
+        through([[336, 432], [302, 349], [306, 262], [326, 203], [352, 158]],
+          { stroke: GREEN, width: 26 });
+        through([[368, 382], [354, 304], [368, 234], [390, 206], [414, 202]],
+          { stroke: GREEN, width: 26 });
 
         part('head', { pivot: [412, 204] }, () => {
           // The crown hooks over from the beak and back down into the throat,
           // leaving the open notch the mark has rather than a closed loop.
+          //
+          // Also stays a `d` string, for the opposite reason to the beak: the
+          // hook is tight, and curvature is exactly what a Bezier handle buys
+          // cheaply. Pinning this down with on-curve points took nine of them
+          // and still read rounder. `through` is for long organic runs.
           path({ d: 'M390,130 C424,94 460,114 456,158 C452,198 428,212 410,206', stroke: GREEN, width: 26 });
+          // Stays a `d` string on purpose. The beak is a sharp tip and a flat
+          // base, and `through` smooths every vertex it is given, so it would
+          // round the point off. Corners are what plain `path` is still for.
           path({ d: 'M247,54 C290,66 340,96 384,134 L358,172 C318,138 276,98 247,54 Z', fill: GREEN });
         });
       });

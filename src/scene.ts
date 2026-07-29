@@ -265,6 +265,126 @@ export function path(o: { d: string } & Fill & Stroke): void {
   shape('path', { d: o.d, ...paint(o) });
 }
 
+// --- curves and arcs ---------------------------------------------------------
+// Geometry stated the way you think about it, rather than as an SVG `d` string.
+// Both of these exist because writing the string form by hand is where drawing
+// code actually goes wrong: arc flags are a coin-flip, and Bezier handles are
+// numbers you cannot read off a reference image.
+
+/** Two decimals is finer than any renderer resolves, and keeps `d` readable. */
+function n(v: number): string {
+  return String(Math.round(v * 100) / 100);
+}
+
+function xy(p: Vec2): string {
+  return `${n(p[0])},${n(p[1])}`;
+}
+
+export interface ArcOptions {
+  cx: number;
+  cy: number;
+  /** Circular radius. Give `rx`/`ry` instead for an ellipse. */
+  r?: number;
+  rx?: number;
+  ry?: number;
+  /**
+   * Angles in degrees, 0 at 3 o'clock and increasing clockwise, matching the
+   * y-down coordinate system everything else here uses. `to` less than `from`
+   * sweeps the other way. Omit both for a closed ring.
+   */
+  from?: number;
+  to?: number;
+  /** Rotation of an ellipse's own axes, degrees. */
+  rotate?: number;
+}
+
+/**
+ * An arc as centre, radius and two angles.
+ *
+ * The SVG form — `A rx ry rot large-arc sweep x y` — needs the endpoints solved
+ * by hand and then two flags whose meaning nobody recalls under pressure. This
+ * takes what you actually know and emits segments of at most 180 degrees, which
+ * makes the large-arc flag unconditionally 0 and lets a full ring be one call.
+ */
+export function arcPath(o: ArcOptions): string {
+  const rx = o.rx ?? o.r;
+  const ry = o.ry ?? o.r;
+  if (rx === undefined || ry === undefined) {
+    throw new Error('heron: arc() needs r, or both rx and ry');
+  }
+  const from = o.from ?? 0;
+  const span = (o.to ?? 360) - from;
+  if (!span) throw new Error('heron: arc() from and to are the same angle');
+
+  const rot = o.rotate ?? 0;
+  const cosR = Math.cos((rot * Math.PI) / 180);
+  const sinR = Math.sin((rot * Math.PI) / 180);
+  const at = (deg: number): Vec2 => {
+    const a = (deg * Math.PI) / 180;
+    const px = rx * Math.cos(a);
+    const py = ry * Math.sin(a);
+    return [o.cx + px * cosR - py * sinR, o.cy + px * sinR + py * cosR];
+  };
+
+  // Splitting at 180 degrees is what removes the flag guesswork: no segment can
+  // ever be the "large" one, and a sweep of 360 or more stops being impossible.
+  const steps = Math.max(1, Math.ceil(Math.abs(span) / 180));
+  const sweep = span > 0 ? 1 : 0;
+  let d = `M${xy(at(from))}`;
+  for (let i = 1; i <= steps; i++) {
+    d += ` A${n(rx)},${n(ry)} ${n(rot)} 0 ${sweep} ${xy(at(from + (span * i) / steps))}`;
+  }
+  return Math.abs(span) >= 360 ? `${d} Z` : d;
+}
+
+export function arc(o: ArcOptions & Fill & Stroke): void {
+  shape('path', { d: arcPath(o), ...paint(o) });
+}
+
+export interface CurveOptions {
+  /** Join the last point back to the first. */
+  closed?: boolean;
+  /** 1 is a natural curve; 0 collapses to straight segments. */
+  tension?: number;
+}
+
+/**
+ * A smooth curve through every point given.
+ *
+ * This is the one that changes how a character gets drawn from a reference.
+ * A cubic's control points are not on the curve, so they cannot be read off an
+ * image — they have to be guessed, checked in a render, and adjusted, which is
+ * a slow loop over numbers with no visible meaning. The points here are all on
+ * the curve, so they are exactly the positions you can see and correct.
+ */
+export function curvePath(points: Vec2[], o: CurveOptions = {}): string {
+  if (points.length < 2) throw new Error('heron: through() needs at least two points');
+  const closed = o.closed ?? false;
+  if (points.length === 2 && !closed) return `M${xy(points[0])} L${xy(points[1])}`;
+
+  const len = points.length;
+  // Open curves clamp at the ends, which makes the first and last segments bend
+  // toward their neighbour instead of flicking off in an arbitrary direction.
+  const at = (i: number): Vec2 =>
+    closed ? points[((i % len) + len) % len] : points[Math.max(0, Math.min(len - 1, i))];
+
+  // Catmull-Rom in Bezier form: the tangent at a point is the direction between
+  // its two neighbours, scaled by a sixth to match cubic parameterisation.
+  const k = (o.tension ?? 1) / 6;
+  let d = `M${xy(points[0])}`;
+  for (let i = 0; i < (closed ? len : len - 1); i++) {
+    const [p0, p1, p2, p3] = [at(i - 1), at(i), at(i + 1), at(i + 2)];
+    const c1: Vec2 = [p1[0] + (p2[0] - p0[0]) * k, p1[1] + (p2[1] - p0[1]) * k];
+    const c2: Vec2 = [p2[0] - (p3[0] - p1[0]) * k, p2[1] - (p3[1] - p1[1]) * k];
+    d += ` C${xy(c1)} ${xy(c2)} ${xy(p2)}`;
+  }
+  return closed ? `${d} Z` : d;
+}
+
+export function through(points: Vec2[], o: CurveOptions & Fill & Stroke = {}): void {
+  shape('path', { d: curvePath(points, o), ...paint(o) });
+}
+
 export function polygon(o: { points: Vec2[] } & Fill & Stroke): void {
   shape('polygon', { points: o.points.map((p) => p.join(',')).join(' '), ...paint(o) });
 }

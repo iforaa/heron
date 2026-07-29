@@ -5,6 +5,7 @@ import {
   character, part, limb, ellipse, circle, path, keys, sampled,
   compile, evaluate, pointAt, lint, renderStatic,
   cubicBezier, linear, easeInOut, walkCycle, partBox,
+  arcPath, curvePath, type Vec2,
 } from '../src/index.ts';
 import { crane } from '../examples/crane.ts';
 
@@ -185,6 +186,39 @@ test('the left-facing logo walks the way it points', async () => {
   const [x0] = pointAt(tenfore, 'legNear.foot', 0);
   const [x1] = pointAt(tenfore, 'legNear.foot', 0.5);
   assert.ok(x1 > x0, `contact must track forward, got ${x0.toFixed(1)} -> ${x1.toFixed(1)}`);
+});
+
+test('arc() takes a centre and two angles, and never emits a large-arc flag', () => {
+  // Splitting at 180 degrees is the whole point: the flag that nobody remembers
+  // the meaning of becomes unconditionally 0, and a full ring stops being a
+  // special case that a single A command cannot express at all.
+  const d = arcPath({ cx: 100, cy: 100, r: 50, from: 0, to: 270 });
+  const arcs = d.match(/A[^A]*/g)!;
+  assert.equal(arcs.length, 2, '270 degrees splits into two sub-180 segments');
+  for (const a of arcs) assert.match(a, /A50,50 0 0 1 /, 'large-arc flag is 0, sweep is positive');
+  assert.ok(d.startsWith('M150,100'), `starts at 0 degrees, got ${d.slice(0, 12)}`);
+  assert.ok(d.trimEnd().endsWith('100,50'), `ends at 270 degrees, got ${d.slice(-10)}`);
+
+  assert.ok(arcPath({ cx: 0, cy: 0, r: 5 }).endsWith('Z'), 'omitting the angles closes a full ring');
+  assert.match(arcPath({ cx: 0, cy: 0, r: 5, from: 90, to: 0 }), / 0 0 /, 'a backwards span sweeps the other way');
+});
+
+test('through() puts the curve on the points, not merely near them', () => {
+  // This is the property that makes the coordinates readable off a reference
+  // image: every one of them is a place the curve actually goes.
+  const pts: Vec2[] = [[10, 10], [40, 60], [90, 50], [120, 90]];
+  const ends = curvePath(pts).split('C').slice(1)
+    .map((s) => s.trim().split(/\s+/)[2].split(',').map(Number));
+  assert.deepEqual(ends, pts.slice(1));
+
+  // Zero tension collapses each cubic onto its own chord.
+  const flat = curvePath(pts, { tension: 0 }).split('C').slice(1)[0].trim().split(/\s+/);
+  assert.equal(flat[0], '10,10');
+  assert.equal(flat[1], '40,60');
+
+  const loop = curvePath(pts, { closed: true });
+  assert.ok(loop.endsWith('Z'));
+  assert.equal(loop.split('C').length - 1, pts.length, 'a closed curve returns to its first point');
 });
 
 test('a big arc is bounded by its own extent, not padded by its radii', () => {

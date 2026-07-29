@@ -65,6 +65,45 @@ Rules that matter:
   colour, length and thickness as the hind leg beneath it, it reads as a second
   hind leg no matter how it is animated.
 
+### Drawing curves: prefer points you can see
+
+Primitives are `ellipse`, `circle`, `rect`, `line`, `polygon`, `arc`, `through`
+and `path`. Two of them are worth knowing before you reach for `path`:
+
+```ts
+// Centre and two angles. 0 is 3 o'clock, increasing clockwise.
+arc({ cx: 513, cy: 424, r: 361, from: 85, to: 234, stroke: '#37995d', width: 30 });
+arc({ cx: 50, cy: 50, r: 20, fill: 'none', stroke: '#000' });   // omit angles: full ring
+
+// A smooth curve through every point listed.
+through([[368, 378], [462, 347], [566, 376], [652, 466], [706, 606]],
+        { stroke: '#37995d', width: 30 });
+```
+
+`through` matters more than it looks. A cubic's control points are *not on the
+curve*, so they cannot be read off a reference image — they have to be guessed,
+rendered, and nudged. Every point you give `through` is a place the curve
+actually goes, so tracing an outline becomes reading coordinates rather than
+solving for handles, and correcting it after a snapshot is moving a point you
+can see. Use it for backs, bellies, necks, wings, tails.
+
+`arc` removes the other reliable mistake. Written as `d`, an arc is
+`A rx ry rot large-arc sweep x y`: endpoints you must solve by hand plus two
+flags whose meaning nobody recalls. `arc` takes what you know and emits
+segments of at most 180 degrees, so the large-arc flag is always 0 and a full
+ring is one call.
+
+**Keep using `path({ d })` for two things**, because `through` is worse at both:
+
+- **Corners.** `through` smooths every vertex, so a beak tip or a folded wing
+  comes out rounded. Anything with a deliberate point stays a `d` string.
+- **Tight curls.** Curvature is exactly what a Bezier handle buys cheaply. A
+  small tight hook that two cubics describe in eight numbers needs about nine
+  on-curve points to pin down, and still reads rounder.
+
+Long organic runs → `through`. Circles and rings → `arc`. Corners and tight
+detail → `path`.
+
 ## 2. Animate
 
 Times are fractions of one cycle, 0 to 1. A key's easing governs the segment
