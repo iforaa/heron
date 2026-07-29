@@ -1,0 +1,14 @@
+{
+  "name": "@heron/core",
+  "version": "0.1.0",
+  "description": "Compile character animation code into a self-contained animated SVG. Built for agents.",
+  "type": "module",
+  "bin": { "heron": "./src/cli.ts" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "crane": "node src/cli.ts build examples/crane.ts -o out/crane.svg"
+  },
+  "license": "MIT",
+  "dependencies": { "@resvg/resvg-js": "^2.6.2" }
+}

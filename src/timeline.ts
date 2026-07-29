@@ -1,0 +1,149 @@
+/**
+ * Evaluation: the pose of every part at a given point in the cycle.
+ *
+ * `evaluate` is a pure function of time. Nothing accumulates between calls, so
+ * any frame can be computed in any order — which is what lets the agent jump
+ * straight to t=0.62 to see what push-off looks like.
+ */
+
+import {
+  type Channel, type Character, type ChannelName, type Node, type Track, type Vec2,
+  NEUTRAL, activeChannels,
+} from './scene.ts';
+
+export type NodePose = Record<ChannelName, number>;
+
+export const REST: NodePose = { ...NEUTRAL };
+
+export type Pose = Map<string, NodePose>;
+
+/** Value of one channel at cycle time t (0..1). */
+export function channelAt(ch: Channel, t: number): number {
+  if (ch.kind === 'fn') return ch.fn(t);
+  const ks = ch.keys;
+  if (t <= ks[0].t) return ks[0].v;
+  if (t >= ks[ks.length - 1].t) return ks[ks.length - 1].v;
+  // t is strictly inside the range, so the first key that reaches it ends the
+  // segment it falls in.
+  const i = ks.findIndex((k) => k.t >= t);
+  const a = ks[i - 1];
+  const b = ks[i];
+  if (b.t === a.t) return b.v;
+  return a.v + (b.v - a.v) * a.ease.fn((t - a.t) / (b.t - a.t));
+}
+
+export function trackAt(track: Track | undefined, t: number): NodePose {
+  if (!track) return { ...REST };
+  // A phase offset means this part runs *ahead* of the others, matching the
+  // negative animation-delay the compiler emits. Exactly 1 is kept as the end
+  // of the cycle rather than wrapped to the start, so inspecting t=1 shows the
+  // final pose instead of silently showing the first one.
+  const shifted = t + (track.phase ?? 0);
+  const local = shifted === 1 ? 1 : ((shifted % 1) + 1) % 1;
+  const pose = { ...REST };
+  for (const name of activeChannels(track)) pose[name] = channelAt(track[name]!, local);
+  return pose;
+}
+
+export function evaluate(ch: Character, t: number): Pose {
+  const pose: Pose = new Map();
+  for (const node of ch.nodes()) pose.set(node.path, trackAt(node.track, t));
+  return pose;
+}
+
+// --- matrices ----------------------------------------------------------------
+// [a c e]
+// [b d f]
+
+export type Mat = [number, number, number, number, number, number];
+const IDENTITY: Mat = [1, 0, 0, 1, 0, 0];
+
+function mul(m: Mat, n: Mat): Mat {
+  return [
+    m[0] * n[0] + m[2] * n[1],
+    m[1] * n[0] + m[3] * n[1],
+    m[0] * n[2] + m[2] * n[3],
+    m[1] * n[2] + m[3] * n[3],
+    m[0] * n[4] + m[2] * n[5] + m[4],
+    m[1] * n[4] + m[3] * n[5] + m[5],
+  ];
+}
+
+export function apply(m: Mat, p: Vec2): Vec2 {
+  return [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
+}
+
+/**
+ * A part's local transform: translate, then rotate and scale about the pivot.
+ *
+ * This order is fixed and must stay identical to the CSS the compiler emits
+ * (`transform: translate() rotate() scale()` with `transform-origin` at the
+ * pivot), because that equivalence is what makes a snapshot trustworthy.
+ */
+function localMatrix(pose: NodePose, pivot?: Vec2): Mat {
+  const [px, py] = pivot ?? [0, 0];
+  const rad = (pose.rotate * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const t: Mat = [1, 0, 0, 1, pose.x, pose.y];
+  const toPivot: Mat = [1, 0, 0, 1, px, py];
+  const rot: Mat = [cos, sin, -sin, cos, 0, 0];
+  const scl: Mat = [pose.scaleX, 0, 0, pose.scaleY, 0, 0];
+  const fromPivot: Mat = [1, 0, 0, 1, -px, -py];
+  return mul(mul(mul(mul(t, toPivot), rot), scl), fromPivot);
+}
+
+/** World matrix per part at time t, composed down the tree. */
+export function worldMatrices(ch: Character, t: number): Map<string, Mat> {
+  return frameAt(ch, t).matrices;
+}
+
+/**
+ * The whole scene posed at one instant.
+ *
+ * Anything asking more than one question about a single moment should take a
+ * Frame rather than a time: the alternative is re-posing the entire tree per
+ * question, which is how a 60-sample lint of a 13-part rig ended up walking the
+ * tree hundreds of times.
+ */
+export interface Frame {
+  readonly t: number;
+  readonly pose: Pose;
+  readonly matrices: Map<string, Mat>;
+  /** World position of a point in a part's local (rest-pose) space. */
+  point(node: Node, local?: Vec2): Vec2;
+}
+
+export function frameAt(ch: Character, t: number): Frame {
+  const pose = evaluate(ch, t);
+  const matrices = new Map<string, Mat>();
+  const walk = (node: Node, parent: Mat) => {
+    const m = mul(parent, localMatrix(pose.get(node.path) ?? REST, node.pivot));
+    matrices.set(node.path, m);
+    for (const item of node.content) if ('node' in item) walk(item.node, m);
+  };
+  walk(ch.root, IDENTITY);
+
+  return {
+    t,
+    pose,
+    matrices,
+    point(node, local) {
+      const m = matrices.get(node.path);
+      if (!m) throw new Error(`heron: no world transform for "${node.path}"`);
+      return apply(m, local ?? node.contact ?? node.pivot ?? [0, 0]);
+    },
+  };
+}
+
+/** Evenly spaced frames across one cycle, for anything that scans the timeline. */
+export function sampleFrames(ch: Character, count: number): Frame[] {
+  return Array.from({ length: count }, (_, i) => frameAt(ch, i / count));
+}
+
+/** World position of a part's contact point (or pivot) at time t. */
+export function pointAt(ch: Character, path: string, t: number, local?: Vec2): Vec2 {
+  const node = ch.find(path);
+  if (!node) throw new Error(`heron: no part "${path}"`);
+  return frameAt(ch, t).point(node, local);
+}

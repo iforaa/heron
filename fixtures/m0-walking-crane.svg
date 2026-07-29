@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 8 180 186" width="360" height="372" role="img" aria-label="A walking crane">
+  <title>Walking crane</title>
+
+  <style>
+    /* ---- rig ----------------------------------------------------------
+       Every animated group declares its joint as an absolute coordinate in
+       the root viewBox space. Because a nested group's local coordinate
+       system is its parent's *post-transform* space, and the rig is authored
+       in the rest pose, the joint's rest-pose world coordinate is exactly the
+       right transform-origin at every depth. This is the whole trick.
+    ------------------------------------------------------------------- */
+    .j { transform-box: view-box; }
+
+    .bob    { transform-origin: 100px  95px; animation: bob    1.1s linear infinite; }
+    .neck   { transform-origin: 130px  86px; animation: neck   1.1s linear infinite; }
+    .head   { transform-origin: 148px  32px; animation: head   1.1s linear infinite; }
+    .shadow { transform-origin: 100px 184px; animation: shadow 1.1s linear infinite; }
+
+    .leg-near .thigh { transform-origin: 105px 112px; animation: thigh 1.1s linear infinite; }
+    .leg-near .shin  { transform-origin: 105px 148px; animation: shin  1.1s linear infinite; }
+    .leg-near .foot  { transform-origin: 105px 180px; animation: foot  1.1s linear infinite; }
+
+    .leg-far  .thigh { transform-origin:  92px 112px; animation: thigh 1.1s linear infinite; animation-delay: -0.55s; }
+    .leg-far  .shin  { transform-origin:  92px 148px; animation: shin  1.1s linear infinite; animation-delay: -0.55s; }
+    .leg-far  .foot  { transform-origin:  92px 180px; animation: foot  1.1s linear infinite; animation-delay: -0.55s; }
+
+    /* ---- motion -------------------------------------------------------
+       Stance runs 0%->60%, swing 60%->100%. Stance segments are linear:
+       during ground contact the limb sweeps at constant angular velocity
+       (the bird walks in place, so the foot tracks backward evenly,
+       treadmill-style). Swing segments are eased, because that is where the
+       limb actually accelerates and decelerates.
+    ------------------------------------------------------------------- */
+    @keyframes thigh {
+      0%   { transform: rotate(-18deg); animation-timing-function: linear; }
+      62%  { transform: rotate( 18deg); animation-timing-function: cubic-bezier(.4,0,.5,1); }
+      100% { transform: rotate(-18deg); }
+    }
+
+    /* The knee stays nearly locked through stance so the foot holds the
+       ground, then breaks sharply at push-off to clear it during swing.
+       Stance carries NO intermediate keyframe on purpose: any change of
+       angular rate mid-contact shows up as the planted foot changing speed,
+       which the eye reads as skating. One linear segment = one constant
+       ground speed. */
+    @keyframes shin {
+      0%   { transform: rotate(  4deg); animation-timing-function: linear; }
+      58%  { transform: rotate(  8deg); animation-timing-function: cubic-bezier(.5,0,.7,1); }
+      66%  { transform: rotate( 28deg); animation-timing-function: cubic-bezier(.3,0,.5,1); }
+      80%  { transform: rotate( 48deg); animation-timing-function: cubic-bezier(.4,0,.45,1); }
+      100% { transform: rotate(  4deg); }
+    }
+
+    /* Absolute foot angle = thigh + shin + foot. Flat against the ground at
+       contact, rolling gently through stance, toes tucked during swing. */
+    @keyframes foot {
+      0%   { transform: rotate( 14deg); animation-timing-function: linear; }
+      58%  { transform: rotate(-24deg); animation-timing-function: cubic-bezier(.5,0,.7,1); }
+      66%  { transform: rotate(-32deg); animation-timing-function: cubic-bezier(.4,0,.3,1); }
+      80%  { transform: rotate(-30deg); animation-timing-function: cubic-bezier(.4,0,.45,1); }
+      100% { transform: rotate( 14deg); }
+    }
+
+    /* Body rises over each mid-stance and drops through each double-support,
+       so it cycles twice per stride. Amplitude is set to the stance leg's
+       vertical shortening at full extension, which is what keeps the planted
+       foot at a constant ground height without an IK solver. */
+    @keyframes bob {
+      0%   { transform: translateY( 1.65px); }
+      30%  { transform: translateY(-1.65px); }
+      62%  { transform: translateY( 1.65px); }
+      80%  { transform: translateY(-1.65px); }
+      100% { transform: translateY( 1.65px); }
+    }
+
+    @keyframes neck {
+      0%   { transform: rotate( 2.4deg); }
+      30%  { transform: rotate(-1.7deg); }
+      60%  { transform: rotate( 2.4deg); }
+      80%  { transform: rotate(-1.7deg); }
+      100% { transform: rotate( 2.4deg); }
+    }
+
+    /* Counter-rotates the neck: birds hold the head level while the body moves. */
+    @keyframes head {
+      0%   { transform: rotate(-2deg); }
+      30%  { transform: rotate( 1.3deg); }
+      60%  { transform: rotate(-2deg); }
+      80%  { transform: rotate( 1.3deg); }
+      100% { transform: rotate(-2deg); }
+    }
+
+    /* Contact shadow tightens as the body rises. */
+    @keyframes shadow {
+      0%   { transform: scaleX(1.06); opacity: .5; }
+      30%  { transform: scaleX(0.94); opacity: .38; }
+      60%  { transform: scaleX(1.06); opacity: .5; }
+      80%  { transform: scaleX(0.94); opacity: .38; }
+      100% { transform: scaleX(1.06); opacity: .5; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .j { animation: none !important; }
+    }
+  </style>
+
+  <ellipse class="shadow j" cx="100" cy="184" rx="42" ry="4.5" fill="#b9c6d0" opacity=".45"/>
+
+  <g class="crane">
+    <g class="bob j">
+
+      <!-- far leg: behind the body, desaturated for depth -->
+      <g class="leg leg-far">
+        <g class="thigh j">
+          <line x1="92" y1="112" x2="92" y2="148" stroke="#8f9ca6" stroke-width="5.5" stroke-linecap="round"/>
+          <g class="shin j">
+            <line x1="92" y1="148" x2="92" y2="180" stroke="#8f9ca6" stroke-width="4" stroke-linecap="round"/>
+            <g class="foot j">
+              <path d="M92,180 L105,183 M92,180 L85,183" stroke="#8f9ca6" stroke-width="3.4" stroke-linecap="round" fill="none"/>
+            </g>
+          </g>
+        </g>
+      </g>
+
+      <!-- tail bustle: the drooping plume cranes carry over the tail -->
+      <path d="M66,84 C50,77 34,83 25,97 C40,101 58,97 68,91 Z" fill="#dde5ea"/>
+
+      <!-- torso: slim and slightly nose-up -->
+      <ellipse cx="100" cy="95" rx="42" ry="21" fill="#eef3f6" transform="rotate(-5 100 95)"/>
+
+      <!-- folded wing, with dark primaries sweeping back over the bustle -->
+      <path d="M70,84 C88,76 116,79 128,89 C116,101 86,103 66,96 Z" fill="#ccd8e0"/>
+      <path d="M78,94 C64,99 48,102 33,101 C45,95 62,90 76,90 Z" fill="#46555f"/>
+      <path d="M74,90 C62,94 50,97 39,98 C50,93 62,89 73,88 Z" fill="#5d6d78"/>
+
+      <!-- neck + head -->
+      <g class="neck j">
+        <path d="M130,86 C137,66 142,48 147,34" stroke="#eef3f6" stroke-width="7" stroke-linecap="round" fill="none"/>
+        <g class="head j">
+          <circle cx="148" cy="30" r="8" fill="#eef3f6"/>
+          <path d="M141.5,25.2 A8,8 0 0 1 154.8,25.6 C151,23.4 145.2,23.3 141.5,25.2 Z" fill="#d94f4f"/>
+          <circle cx="151.5" cy="29" r="1.5" fill="#2b343b"/>
+          <path d="M155,28.4 L188,30.5 L155,32.8 Z" fill="#e0a63f"/>
+        </g>
+      </g>
+
+      <!-- near leg: in front, full contrast -->
+      <g class="leg leg-near">
+        <g class="thigh j">
+          <line x1="105" y1="112" x2="105" y2="148" stroke="#3d4a54" stroke-width="5.5" stroke-linecap="round"/>
+          <g class="shin j">
+            <line x1="105" y1="148" x2="105" y2="180" stroke="#3d4a54" stroke-width="4" stroke-linecap="round"/>
+            <g class="foot j">
+              <path d="M105,180 L118,183 M105,180 L98,183" stroke="#3d4a54" stroke-width="3.4" stroke-linecap="round" fill="none"/>
+            </g>
+          </g>
+        </g>
+      </g>
+
+    </g>
+  </g>
+</svg>
