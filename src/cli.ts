@@ -78,7 +78,7 @@ function num(v: unknown, d: number): number {
 const USAGE = `heron - compile character animation into a self-contained animated SVG
 
   heron trace    <image.png> [-o scene.ts] [--epsilon 1.2] [--threshold 0.22]
-                 [--fit 1.5] [--ribbons all|taper|none]
+                 [--fit 1.5] [--ribbons all|taper|none] [--refine 12]
   heron match    <scene.ts> <reference.png> [-o overlay.png] [-t 0]
   heron snapshot <scene.ts> [-t 0.4] [-o frame.png] [-w 520] [--svg]
   heron sheet    <scene.ts> [-n 8] [-o sheet.png] [--cols 4] [--svg]
@@ -109,6 +109,7 @@ async function main(): Promise<void> {
       name: args.name ? String(args.name) : undefined,
       fit: num(args.fit, 1.5),
       ribbons: args.ribbons ? (String(args.ribbons) as 'taper' | 'all' | 'none') : undefined,
+      refine: num(args.refine, 12),
       out: basename(out),
       importFrom: existsSync(resolve('node_modules/@heron/core')) ? '@heron/core' : (rel.startsWith('.') ? rel : `./${rel}`),
     });
