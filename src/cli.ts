@@ -119,6 +119,10 @@ async function main(): Promise<void> {
     if (res.outlined) {
       console.log(`  ${res.outlined} filled shape(s) traced to exact outlines by potrace, not approximated as strokes`);
     }
+    if (res.fitted) {
+      console.log(`  ${res.fitted} run(s) were really a circle or a line, and are emitted as one - fitted over every`);
+      console.log(`    sample, so they are more accurate than the points they replace, not just shorter`);
+    }
     if (res.varying - res.outlined > 0) {
       console.log(`  ! ${res.varying - res.outlined} run(s) taper but could not be outlined - still emitted as constant-width strokes`);
     }

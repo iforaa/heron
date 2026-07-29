@@ -82,6 +82,72 @@ export interface Mask {
   data: Uint8Array;
 }
 
+export interface Coverage {
+  width: number;
+  height: number;
+  /** How much of each pixel the ink covers, 0 to 1. */
+  data: Float32Array;
+}
+
+/**
+ * Ink coverage rather than an ink yes/no.
+ *
+ * A threshold is a cliff, and the whole boundary of a mark sits on it: on this
+ * logo, re-cutting the *same image* at 0.22 instead of 0.40 moves the overlap
+ * score by 5%, and shifting a boundary by one pixel moves it by 6.5%. Any score
+ * built on a threshold is therefore reporting a mixture of the geometry and the
+ * cutoff, and it responds to a sub-pixel correction in steps rather than
+ * smoothly — which is exactly the signal a sub-pixel refinement needs to show.
+ *
+ * Coverage is recovered by unmixing: an edge pixel is a blend of ink over
+ * background, so its distance from the background colour, over the distance a
+ * solid interior pixel travels, is the fraction covered.
+ */
+export function coverage(bm: Bitmap): Coverage {
+  const { width, height, rgba } = bm;
+  const at = (i: number): [number, number, number] => [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]];
+  const corners = [0, width - 1, (height - 1) * width, height * width - 1].map(at);
+  const bg = [0, 1, 2].map((c) => corners.map((p) => p[c]).sort((a, b) => a - b)[1]);
+
+  const data = new Float32Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    const a = rgba[i * 4 + 3] / 255;
+    const [r, g, b] = at(i);
+    data[i] = a * (Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2]));
+  }
+
+  // Solid ink is what the interior reads, not the single most extreme pixel: an
+  // upper quartile of the inked pixels is immune to one stray sample.
+  const hot = Array.from(data).filter((v) => v > 20).sort((a, b) => a - b);
+  const full = hot[Math.floor(hot.length * 0.75)] || 1;
+  for (let i = 0; i < data.length; i++) data[i] = Math.min(1, data[i] / full);
+  return { width, height, data };
+}
+
+/**
+ * Fuzzy Jaccard: the overlap of two coverage fields, as a percentage.
+ *
+ * The same shape as intersection-over-union, with min and max standing in for
+ * and/or, so it degrades smoothly with a fraction-of-a-pixel error instead of
+ * waiting for a pixel to flip.
+ */
+export function softOverlap(a: Coverage, b: Coverage): number {
+  let lo = 0;
+  let hi = 0;
+  for (let i = 0; i < a.data.length; i++) {
+    lo += Math.min(a.data[i], b.data[i]);
+    hi += Math.max(a.data[i], b.data[i]);
+  }
+  return hi ? (lo / hi) * 100 : 0;
+}
+
+/** Total ink, counting partly-covered pixels for what they cover. */
+export function totalCoverage(c: Coverage): number {
+  let n = 0;
+  for (let i = 0; i < c.data.length; i++) n += c.data[i];
+  return n;
+}
+
 /**
  * Ink is anything meaningfully darker or more saturated than the background.
  *
@@ -164,6 +230,27 @@ export function distanceField(mask: Mask): Float64Array {
   return f;
 }
 
+/**
+ * Distance from each pixel to the *edge of the ink*, in pixels.
+ *
+ * The half-pixel matters and is not a rounding nicety. `distanceField` measures
+ * to the nearest background pixel's centre, but the boundary lies halfway
+ * between that centre and the last inked one, so every raw reading is 0.5 too
+ * large and every width derived from it is 1.0 too large. On a 21-pixel bar the
+ * distance field reports 22.
+ *
+ * That error is uniform, so it never looks like anything: it added 2.4% ink
+ * across the whole traced crane while the per-scanline width probes still read
+ * "within 0%", because a one-pixel error hides inside a 38-pixel stroke. It only
+ * surfaced against a coverage comparison, which counts the partly-covered edge
+ * pixels a threshold throws away.
+ */
+export function radiusField(dist: Float64Array): Float64Array {
+  const r = new Float64Array(dist.length);
+  for (let i = 0; i < dist.length; i++) r[i] = Math.max(0, Math.sqrt(dist[i]) - 0.5);
+  return r;
+}
+
 // Neighbour order p2..p9 clockwise from north, which is what Zhang-Suen's
 // transition count is defined over.
 const NB: Vec2[] = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
@@ -222,6 +309,11 @@ export interface Stroke {
   length: number;
   closed: boolean;
   /**
+   * The cap the reference actually draws, measured from the ink past each tip
+   * rather than assumed. `butt` where the stroke is cut off square.
+   */
+  cap: 'round' | 'butt';
+  /**
    * Points where the run turns sharply. A drawn stroke curves; a hard corner
    * usually means two different things were traced as one run because they
    * happen to touch, so these are the places to consider splitting.
@@ -229,6 +321,13 @@ export interface Stroke {
   corners: Vec2[];
   /** Every centreline pixel, unsimplified. Used to claim the ink around it. */
   centreline: Vec2[];
+  /**
+   * The same run after sub-pixel refinement and endpoint correction, still at
+   * full density. Fit primitives to this rather than to `points`: simplification
+   * throws away the samples a fit averages over, which is where its accuracy
+   * comes from.
+   */
+  ridge: Vec2[];
 }
 
 /**
@@ -528,6 +627,184 @@ function polylineLength(p: Vec2[]): number {
   return n;
 }
 
+// --- sub-pixel refinement ----------------------------------------------------
+// A thinned skeleton is a set of whole pixels, so a centreline that truly runs
+// at x = 40.5 arrives as 40 or 41 and the whole stroke sits up to half a pixel
+// off. Half a pixel is not a rounding detail here: on this artwork one pixel of
+// boundary error costs 6.5 points of overlap, so the lattice alone can account
+// for several points before any real mistake is made.
+
+/** Bilinear sample of a scalar field, clamped at the edges. */
+function sample(f: Float64Array, w: number, h: number, x: number, y: number): number {
+  const cx = Math.max(0, Math.min(w - 1.001, x));
+  const cy = Math.max(0, Math.min(h - 1.001, y));
+  const x0 = Math.floor(cx);
+  const y0 = Math.floor(cy);
+  const fx = cx - x0;
+  const fy = cy - y0;
+  const i = y0 * w + x0;
+  return (
+    f[i] * (1 - fx) * (1 - fy) + f[i + 1] * fx * (1 - fy) +
+    f[i + w] * (1 - fx) * fy + f[i + w + 1] * fx * fy
+  );
+}
+
+/** Unit tangent at `i`, taken over a short window so lattice steps average out. */
+function tangentAt(pts: Vec2[], i: number, closed: boolean, span = 2): Vec2 {
+  const n = pts.length;
+  const at = (k: number) => (closed ? pts[((k % n) + n) % n] : pts[Math.max(0, Math.min(n - 1, k))]);
+  const a = at(i - span);
+  const b = at(i + span);
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy) || 1;
+  return [dx / len, dy / len];
+}
+
+/**
+ * Slides each centreline point onto the true ridge of the radius field.
+ *
+ * The medial axis is where the distance to the edge is locally greatest, so
+ * across the stroke the radius traces a peak. Sampling it either side of the
+ * point and fitting a parabola puts the peak — and with it the centre and the
+ * true radius — between the pixels rather than on one.
+ */
+function refineRidge(
+  rad: Float64Array, w: number, h: number, pts: Vec2[], closed: boolean,
+): { points: Vec2[]; radii: number[] } {
+  const points: Vec2[] = [];
+  const radii: number[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const [px, py] = pts[i];
+    const [tx, ty] = tangentAt(pts, i, closed);
+    const nx = -ty;
+    const ny = tx;
+    const r0 = sample(rad, w, h, px, py);
+    const rm = sample(rad, w, h, px - nx, py - ny);
+    const rp = sample(rad, w, h, px + nx, py + ny);
+
+    const curve = rm + rp - 2 * r0;
+    // A ridge curves downward either side. Anything else — a plateau inside a
+    // blob, a saddle at a fork — has no peak to snap to, so the point stays put.
+    if (curve < -1e-6) {
+      const s = Math.max(-0.7, Math.min(0.7, (rm - rp) / (2 * curve)));
+      points.push([px + s * nx, py + s * ny]);
+      radii.push(r0 - ((rp - rm) * (rp - rm)) / (8 * curve));
+    } else {
+      points.push([px, py]);
+      radii.push(r0);
+    }
+  }
+  return { points, radii };
+}
+
+/**
+ * Cuts a tapered terminal off the run it is fused to.
+ *
+ * A beak is a wedge growing out of a neck, and the medial axis runs straight
+ * through the join without forking, so both arrive as one branch. Measured as
+ * one they average out: `widthVariation` compares percentiles of the *middle* of
+ * a run, so a taper over the last 50 pixels of a 480-pixel neck reads as no
+ * variation at all, the whole run is drawn at one width, and the wedge gets a
+ * blunt round cap two-thirds of the way along its point. On the traced crane
+ * that single mistake was 66% of all the ink the scene invented.
+ *
+ * Cutting at the knee lets each half be measured for what it is, and the split
+ * pays for itself twice over: the constant part stays a stroke and stays
+ * riggable, while the wedge becomes its own region and can be outlined exactly.
+ */
+function splitTapers(runs: Vec2[][], rad: Float64Array, w: number, minBranch: number): Vec2[][] {
+  const out: Vec2[][] = [];
+  for (const run of runs) {
+    const r = run.map((p) => rad[p[1] * w + p[0]]);
+    const sorted = [...r].sort((a, b) => a - b);
+    const mid = sorted[Math.floor(sorted.length / 2)];
+    const first = run[0];
+    const last = run[run.length - 1];
+    const closed = Math.hypot(last[0] - first[0], last[1] - first[1]) < 3;
+
+    let lo = 0;
+    let hi = run.length - 1;
+    if (!closed && mid > 0) {
+      for (const side of [0, 1]) {
+        // A taper is a tip far thinner than the run, thickening steadily inward.
+        // Anything that starts near full width is an ordinary end, not a wedge.
+        const tipR = side === 0 ? r[0] : r[r.length - 1];
+        if (tipR > 0.6 * mid) continue;
+        let k = 0;
+        while (k < run.length && (side === 0 ? r[k] : r[r.length - 1 - k]) < 0.85 * mid) k++;
+        if (k < minBranch || run.length - k < minBranch) continue;
+        if (side === 0) lo = k; else hi = run.length - 1 - k;
+      }
+    }
+
+    if (lo > 0) out.push(run.slice(0, lo + 1));
+    if (hi < run.length - 1) out.push(run.slice(hi));
+    out.push(run.slice(lo, hi + 1));
+  }
+  return out;
+}
+
+export interface EndFit {
+  /** How far the ink reaches past the last centreline point, along the run. */
+  reach: number;
+  /** A rounded tip narrows before it stops; a cut one does not. */
+  round: boolean;
+}
+
+/**
+ * What the ink does past the end of the centreline.
+ *
+ * A medial axis stops one radius short of a stroke's tip — that is a property of
+ * the medial axis, not a defect — so every free end is systematically short, and
+ * *how* it is short depends on the cap. Both a round and a flat end leave the
+ * skeleton a radius shy of the tip, and they are told apart by the profile
+ * rather than the distance: three-quarters of the way out, a round cap has
+ * narrowed to about two-thirds of its width while a cut one is still at full.
+ *
+ * Getting this wrong is not subtle. Rendering a flat end with a round cap puts a
+ * bulge past the tip and leaves the corners empty, which is exactly the paired
+ * red-and-blue that shows at the foot of the traced crane.
+ */
+function endGeometry(mask: Mask, p: Vec2, tangent: Vec2, r: number): EndFit {
+  const { width: w, height: h, data } = mask;
+  const ink = (x: number, y: number): boolean => {
+    const ix = Math.round(x);
+    const iy = Math.round(y);
+    return ix >= 0 && iy >= 0 && ix < w && iy < h && data[iy * w + ix] === 1;
+  };
+
+  // March outward and stop at the first gap, so a different shape passing nearby
+  // cannot be mistaken for more of this one.
+  const step = 0.25;
+  let reach = 0;
+  for (let s = step; s <= r * 2.5; s += step) {
+    if (!ink(p[0] + tangent[0] * s, p[1] + tangent[1] * s)) break;
+    reach = s;
+  }
+  if (reach <= 0) return { reach: 0, round: true };
+
+  // Half-width across the run, three-quarters of the way to the tip.
+  const at = 0.75 * reach;
+  const bx = p[0] + tangent[0] * at;
+  const by = p[1] + tangent[1] * at;
+  const nx = -tangent[1];
+  const ny = tangent[0];
+  const arm = (sign: number): number => {
+    let d = 0;
+    for (let s = step; s <= r * 2; s += step) {
+      if (!ink(bx + nx * sign * s, by + ny * sign * s)) break;
+      d = s;
+    }
+    return d;
+  };
+  const half = (arm(1) + arm(-1)) / 2;
+
+  // A circular cap is at sqrt(1 - 0.75^2) = 0.66 of its radius here; a cut one is
+  // still at 1.0. The cut stays midway between them.
+  return { reach, round: r > 0 ? half < 0.83 * r : true };
+}
+
 /**
  * Centrelines with their measured widths.
  *
@@ -537,30 +814,86 @@ function polylineLength(p: Vec2[]): number {
  * quietly flatten it.
  */
 export function strokes(mask: Mask, epsilon = 1.2, minBranch = 6): Stroke[] {
-  const dist = distanceField(mask);
+  const { width: w, height: h } = mask;
+  const rad = radiusField(distanceField(mask));
   const skel = skeletonise(mask);
-  const halfWidth = (p: Vec2) => Math.sqrt(dist[p[1] * mask.width + p[0]]);
 
-  return traceSkeleton(skel, minBranch)
+  return splitTapers(traceSkeleton(skel, minBranch), rad, w, minBranch)
     .map((raw): Stroke => {
-      // Ends of a medial axis taper to zero by construction, so the extreme
-      // samples describe the cap rather than the stroke.
-      const trim = raw.slice(Math.floor(raw.length * 0.1), Math.ceil(raw.length * 0.9)) ;
-      const ws = (trim.length ? trim : raw).map(halfWidth).map((v) => v * 2).sort((a, b) => a - b);
+      const first = raw[0];
+      const last = raw[raw.length - 1];
+      const closed = Math.hypot(last[0] - first[0], last[1] - first[1]) < 3;
+      const { points: ridge, radii } = refineRidge(rad, w, h, raw, closed);
+
+      /**
+       * Ends of a medial axis taper to zero by construction, so the extreme
+       * samples describe the cap rather than the stroke. The span to discard is
+       * one radius — that is how far a cap reaches — and not a percentage: a
+       * tenth of a long run is far more than a cap, and cutting that much is
+       * what let genuine tapers pass as constant-width strokes.
+       */
+      const rough = [...radii].sort((a, b) => a - b)[Math.floor(radii.length / 2)] ?? 0;
+      const skip = Math.min(Math.ceil(rough), Math.floor(radii.length / 3));
+      const cut = radii.slice(skip, radii.length - skip);
+      const ws = (cut.length ? cut : radii).map((v) => v * 2).sort((a, b) => a - b);
       const mid = ws[Math.floor(ws.length / 2)] ?? 0;
       const lo = ws[Math.floor(ws.length * 0.1)] ?? mid;
       const hi = ws[Math.floor(ws.length * 0.9)] ?? mid;
-      const first = raw[0];
-      const last = raw[raw.length - 1];
-      const points = simplify(raw, epsilon);
+
+      /**
+       * Both kinds of end are short, and each is short for its own reason.
+       *
+       * A free end is short by construction: a medial axis stops one radius
+       * before a tip, because that is where the largest inscribed circle stops
+       * fitting. It is extended to where its cap should begin.
+       *
+       * A junction is short too, and for a different reason: the medial axis of
+       * a T is a Y, because the inscribed circle at a meeting touches both
+       * strokes at once and so the branch point sits back from the corner.
+       * Rendered, the strokes meet but leave a crescent notch, and those notches
+       * are the two largest patches of missing ink left in the traced crane.
+       *
+       * Extending the branch does not fix it, which is worth recording so it is
+       * not tried again. Sweeping the extension from zero to a full radius moves
+       * the overlap score not at all up to half a radius and then makes it
+       * worse: a branch carried along its own tangent leaves the fillet as it
+       * goes and spills out the far side of the stroke it was joining, adding
+       * ink in the wrong place at the same rate it fills the right one. The
+       * notch is a fillet, and a fillet is not a shape a stroked line can make —
+       * closing it means rejoining the two branches into one continuous curve,
+       * which is a decision about the drawing rather than a measurement of it.
+       */
+      const line = ridge.slice();
+      let round = true;
+      if (!closed) {
+        for (const side of [0, 1]) {
+          const tip = side === 0 ? 0 : line.length - 1;
+          const px = raw[tip];
+          if (crossingNumber(skel, px[1] * w + px[0]) !== 1) continue;
+          const t = tangentAt(ridge, tip, false);
+          const out: Vec2 = side === 0 ? [-t[0], -t[1]] : t;
+          const r = mid / 2;
+          const fit = endGeometry(mask, line[tip], out, r);
+          if (!fit.reach) continue;
+          if (!fit.round) round = false;
+          // A round cap already draws a radius past the polyline, so the line
+          // must stop that much short of the tip. A cut one draws nothing.
+          const grow = Math.max(0, Math.min(1.5 * r, fit.reach - (fit.round ? r : 0)));
+          line[tip] = [line[tip][0] + out[0] * grow, line[tip][1] + out[1] * grow];
+        }
+      }
+
+      const points = simplify(line, epsilon);
       return {
         points,
         width: Math.round(mid * 10) / 10,
         widthVariation: lo > 0 ? Math.round((hi / lo) * 100) / 100 : 1,
         length: Math.round(polylineLength(raw)),
-        closed: Math.hypot(last[0] - first[0], last[1] - first[1]) < 3,
+        closed,
+        cap: round ? 'round' : 'butt',
         corners: sharpCorners(points),
         centreline: raw,
+        ridge: line,
       };
     })
     // A run shorter than it is wide is not a stroke. It is the remnant of a

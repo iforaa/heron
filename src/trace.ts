@@ -21,6 +21,7 @@ import {
   maskOfRegions, skeletonise, strokes,
 } from './raster.ts';
 import { hasPotrace, outlinePaths } from './outline.ts';
+import { fitCircle, fitLine } from './fit.ts';
 import type { Vec2 } from './scene.ts';
 
 export interface TraceOptions {
@@ -38,6 +39,11 @@ export interface TraceOptions {
   importFrom?: string;
   /** Use potrace for tapering regions when available. On by default. */
   outlines?: boolean;
+  /**
+   * How close a circle or line must come, in pixels, to be used in place of a
+   * point list. Set to 0 to always emit point lists.
+   */
+  fit?: number;
 }
 
 export interface TraceResult {
@@ -52,10 +58,58 @@ export interface TraceResult {
   joints: Vec2[];
   /** Tapering regions reproduced as exact outlines rather than as strokes. */
   outlined: number;
+  /** Runs that turned out to be a circle or a straight line. */
+  fitted: number;
 }
 
 /** Above this, a run is tapering rather than holding one width. */
 const TAPER = 1.35;
+
+/**
+ * Snaps measured widths onto the few pen weights the drawing was made with.
+ *
+ * A mark is drawn with one or two nib sizes, so the widths coming back are that
+ * intent plus measurement noise — 37.6, 38.1, 37.9 are one pen, not three. The
+ * spread is small, but it is spread in the wrong direction: each is a median
+ * over one run, while the group median pools hundreds of samples across every
+ * run that shares the weight. Snapping is therefore *more* accurate as well as
+ * truer to how the thing was made, and it gives an agent grouping the strokes
+ * into parts one number to reason about instead of ten.
+ *
+ * Only widths already within a few percent of each other are pooled. Two genuine
+ * weights stay two.
+ */
+function quantiseWidths(runs: Stroke[], tolerance = 0.05): Map<number, number> {
+  const eligible = runs
+    .map((s, i) => ({ i, w: s.width, len: s.length }))
+    .filter((r) => r.w > 0 && runs[r.i].widthVariation <= TAPER)
+    .sort((a, b) => a.w - b.w);
+
+  const groups: { members: typeof eligible }[] = [];
+  for (const r of eligible) {
+    const last = groups[groups.length - 1];
+    // Compared against the group's smallest member, so a long chain of small
+    // steps cannot drift a group across two genuinely different weights.
+    if (last && r.w <= last.members[0].w * (1 + tolerance)) last.members.push(r);
+    else groups.push({ members: [r] });
+  }
+
+  const out = new Map<number, number>();
+  for (const g of groups) {
+    // Weighted by length: a 400px run measured the pen far better than a 30px one.
+    const total = g.members.reduce((n, m) => n + m.len, 0);
+    let seen = 0;
+    let pick = g.members[0].w;
+    for (const m of [...g.members].sort((a, b) => a.w - b.w)) {
+      seen += m.len;
+      pick = m.w;
+      if (seen >= total / 2) break;
+    }
+    const w = Math.round(pick * 10) / 10;
+    for (const m of g.members) if (m.w !== w) out.set(m.i, w);
+  }
+  return out;
+}
 
 function ident(s: string): string {
   // An input that is already a usable identifier is left exactly as given.
@@ -67,8 +121,19 @@ function ident(s: string): string {
   return /^[A-Za-z]/.test(cleaned) ? cleaned : `art${cleaned}`;
 }
 
+/**
+ * Coordinates keep a decimal, because the centreline is fitted between pixels.
+ *
+ * Rounding to whole numbers would throw away the sub-pixel fit and put back the
+ * lattice error it exists to remove — up to half a pixel on every point, which
+ * is worth several points of overlap on a fine-lined mark.
+ */
+function n1(v: number): string {
+  return String(Math.round(v * 10) / 10);
+}
+
 function pointList(pts: Vec2[], scale: number): string {
-  const p = pts.map(([x, y]) => `[${Math.round(x / scale)}, ${Math.round(y / scale)}]`);
+  const p = pts.map(([x, y]) => `[${n1(x / scale)}, ${n1(y / scale)}]`);
   // One long line is unreadable and one point per line is unreviewable; six is
   // about the width of a sensible editor.
   const rows: string[] = [];
@@ -111,6 +176,47 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
     });
   }
 
+  const quantised = quantiseWidths(found);
+
+  /**
+   * A run that is really a circle or a line is emitted as one.
+   *
+   * The straight fit is tried first. A short, gently curved run will also admit
+   * some enormous circle that passes through it, and describing a leg as a
+   * 4000-pixel arc is true, useless, and impossible to animate.
+   */
+  const tol = o.fit ?? 1.5;
+  // A fit that only describes part of a run is not a description of the run.
+  // Half a curve will always admit some line through it at a small residual.
+  const MOSTLY = 0.85;
+  const shape = new Map<number, string>();
+  if (tol > 0) {
+    found.forEach((k, i) => {
+      if (k.widthVariation > TAPER || k.ridge.length < 8) return;
+      const width = Math.round(((quantised.get(i) ?? k.width) / s) * 10) / 10;
+      const tail = `stroke: INK, width: ${width}${k.cap === 'butt' ? `, cap: 'butt'` : ''}`;
+
+      const straight = fitLine(k.ridge);
+      if (straight && straight.error <= tol && straight.inliers >= MOSTLY) {
+        shape.set(i, `    //   a straight line, within ${n1(straight.error / s)}px over its whole length\n`
+          + `    line({ from: [${n1(straight.from[0] / s)}, ${n1(straight.from[1] / s)}], `
+          + `to: [${n1(straight.to[0] / s)}, ${n1(straight.to[1] / s)}], ${tail} });`);
+        return;
+      }
+
+      const round = fitCircle(k.ridge);
+      if (!round || round.error > tol || round.inliers < MOSTLY) return;
+      const sweep = Math.abs(round.to - round.from);
+      const span = Math.hypot(...[0, 1].map((d) => Math.max(...k.ridge.map((p) => p[d])) - Math.min(...k.ridge.map((p) => p[d]))));
+      if (sweep < 20 || round.r > span * 5) return;
+      const arcArgs = `cx: ${n1(round.cx / s)}, cy: ${n1(round.cy / s)}, r: ${n1(round.r / s)}`;
+      const angles = k.closed || sweep >= 359 ? '' : `, from: ${n1(round.from)}, to: ${n1(round.to)}`;
+      shape.set(i, `    //   a circle, within ${n1(round.error / s)}px over ${Math.round(sweep)} degrees. Fitted\n`
+        + `    //   from ${k.ridge.length} samples, so it is a better estimate than any of them.\n`
+        + `    arc({ ${arcArgs}${angles}, ${tail} });`);
+    });
+  }
+
   const body = found.map((k, i) => {
     const xs = k.points.map((p) => p[0] / s);
     const ys = k.points.map((p) => p[1] / s);
@@ -136,10 +242,23 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
         + `\n    //   A drawn stroke curves; a hard corner usually means two things were`
         + `\n    //   traced as one run because they touch. Consider splitting it there.`
       : '';
-    const opts = [`stroke: INK`, `width: ${Math.round((k.width / s) * 10) / 10}`, k.closed ? 'closed: true' : '']
-      .filter(Boolean).join(', ');
-    return `    // s${i}  box ${box}  length ${Math.round(k.length / s)}px  width ${Math.round((k.width / s) * 10) / 10}${taper}${bends}\n`
-      + `    through([\n${pointList(k.points, s)},\n    ], { ${opts} });`;
+    const width = Math.round(((quantised.get(i) ?? k.width) / s) * 10) / 10;
+    const pen = quantised.has(i)
+      ? `\n    //   width snapped from ${Math.round((k.width / s) * 10) / 10} to the shared pen weight ${width}`
+      : '';
+    // A cut end rendered with a round cap bulges past the tip and leaves the
+    // corners bare, so the measured cap travels with the geometry.
+    const head = `    // s${i}  box ${box}  length ${Math.round(k.length / s)}px  width ${width}`
+      + `${k.cap === 'butt' ? '  cut ends' : ''}${pen}${taper}${bends}\n`;
+
+    const fitted = shape.get(i);
+    if (fitted) return head + fitted;
+
+    const opts = [
+      `stroke: INK`, `width: ${width}`,
+      k.cap === 'butt' ? `cap: 'butt'` : '', k.closed ? 'closed: true' : '',
+    ].filter(Boolean).join(', ');
+    return `${head}    through([\n${pointList(k.points, s)},\n    ], { ${opts} });`;
   }).join('\n\n');
 
   const jointList = joints.length
@@ -190,7 +309,14 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
  * Read every one before animating.
  */
 
-import { character, layer, path, through, type Character } from '${o.importFrom ?? '@heron/core'}';
+import { ${
+  ['character', 'layer',
+    body.includes('\n    arc(') ? 'arc' : '',
+    body.includes('\n    line(') ? 'line' : '',
+    body.includes('\n    path(') ? 'path' : '',
+    body.includes('\n    through(') ? 'through' : '',
+  ].filter(Boolean).join(', ')
+}, type Character } from '${o.importFrom ?? '@heron/core'}';
 
 const INK = '${colour}';
 
@@ -216,5 +342,6 @@ export default ${name};
     source, strokes: found, colour, width: W, height: H, varying,
     joints: joints.map((j): Vec2 => [Math.round(j[0] / s), Math.round(j[1] / s)]),
     outlined: outline.size,
+    fitted: shape.size,
   };
 }

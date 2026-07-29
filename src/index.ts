@@ -50,8 +50,9 @@ export type { TraceOptions, TraceResult } from './trace.ts';
 export { match, formatMatch } from './match.ts';
 export type { MatchReport, MatchOptions, WidthProbe } from './match.ts';
 export {
-  loadImage, rasterise, inkMask, inkColour, distanceField,
+  loadImage, rasterise, inkMask, inkColour, distanceField, radiusField,
+  coverage, softOverlap, totalCoverage,
   skeletonise, traceSkeleton, simplify, strokes, encodePng, junctions, crossingNumber,
   labelRegions, maskOfRegions,
 } from './raster.ts';
-export type { Bitmap, Mask, Stroke } from './raster.ts';
+export type { Bitmap, Mask, Coverage, Stroke } from './raster.ts';

@@ -39,10 +39,18 @@ overlap 51.2%  ink 0.79x
 STROKE WIDTH: every stroke is about 26% too thin (0.74x).
 ```
 
-Tracing the same file instead took it to 91.4% overlap and 1.00x ink, with
-widths measured to the pixel. If you have a reference image, `heron trace` it.
-If you are drawing freehand, still run `heron match` against whatever reference
-exists. A number you typed after looking at a picture is a guess.
+Tracing the same file instead took it to 95.6% overlap, with widths measured to
+the pixel. If you have a reference image, `heron trace` it. If you are drawing
+freehand, still run `heron match` against whatever reference exists. A number you
+typed after looking at a picture is a guess.
+
+The same lesson applies one level down, to the measuring itself. The distance
+field measures to the nearest *background pixel's centre*, but the edge of the
+ink is half a pixel nearer than that, so every width it reported was exactly 1.0
+too large. Uniform across a whole scene, that is 2.4% of invented ink — and the
+test guarding it allowed ±1.5px, which is wider than the error, so it passed
+happily for the error's entire life. **A tolerance looser than the mistake it
+guards is not a test.**
 
 ## 1. Get the geometry from the reference
 
@@ -58,9 +66,35 @@ that is a filled shape (a tapered beak, a solid foot) and will look wrong as a
 constant-width stroke. Redraw those few by hand with `path` or `polygon`.
 
 `match` is the instrument. Grey means both, **red means the reference has ink
-you do not, blue means you invented ink**. Read `inkRatio` first — it is one
+you do not, blue means you invented ink**. Read the ink ratio first — it is one
 number for systematic error and it is the one your eye cannot see. Chasing
 shape differences while every stroke is 20% thin is wasted work.
+
+### Read the scale line before you read any percentage
+
+```
+overlap 93.8%  ink 0.993x   (binary 95.6% / 0.98x)
+scale: one pixel of edge error costs 6.5% here, so 6.2% short is about
+1.0 pixel(s) of boundary — edges, not placement.
+```
+
+A bare percentage is unreadable. On this logo, moving every boundary out by one
+pixel — same shape, nothing misplaced — costs 6.5 points, so "93.8%" means the
+edges are about a pixel out and *nothing is in the wrong place*. On a chunkier
+mark the same 93.8% would mean a limb had gone missing. The scale line is what
+tells the two apart, and without it agents chase coordinates that are already
+right.
+
+The headline numbers compare **coverage**, not a thresholded yes/no. A threshold
+is a cliff and the entire boundary of a mark sits on it: re-cutting the very same
+image at 0.22 instead of 0.40 moves the binary score by 5 points. Worse, a binary
+score answers in steps, so a genuine sub-pixel improvement can move it by exactly
+zero — which makes it useless as something to improve against. Coverage unmixes
+each edge pixel back into the fraction of ink covering it and responds smoothly.
+
+It is also the stricter number, and that is the point. The binary score is quoted
+in brackets purely so old figures stay comparable; it flatters, because rounding
+every edge pixel to 0 or 1 throws away exactly the disagreement that is left.
 
 Two things `trace` deliberately does not do:
 
@@ -85,10 +119,30 @@ has no single width, so `through(points, { width })` flattens it.
 So `trace` uses both, and picks per region. Runs that hold one width become
 centrelines; runs whose width varies get handed to **potrace** for an exact
 outline, one region at a time so each stays one shape and one part. On the
-reference logo that is 10 strokes and 5 outlines, and it scores **93.3%** —
-slightly ahead of running potrace over the whole image (93.2%) and well ahead of
-skeletonising everything (91.1%), while staying riggable, which whole-image
-outline tracing is not.
+reference logo that is 11 strokes and 8 outlines, and it scores **95.6%** binary
+/ 93.8% by coverage, while staying riggable, which whole-image outline tracing is
+not.
+
+### A taper hides inside the run it grows out of
+
+A beak is a wedge growing out of a neck, and the medial axis runs from one into
+the other without ever forking — so they arrive as a single branch. Measured
+together the taper disappears: width statistics discard the ends of a run (a
+medial axis really does taper to nothing at a cap, so some trimming is right),
+and a wedge over the last tenth of a long neck gets trimmed away with them. The
+run then reads as perfectly constant, gets drawn at one width, and the wedge ends
+in a blunt round cap two-thirds of the way along its own point.
+
+On the crane that one mistake was **two-thirds of all the ink the scene
+invented**, and nothing else in the pipeline could see it. `trace` now cuts a
+tapered terminal off at the knee, so each half is measured for what it is: the
+constant part stays a stroke and stays riggable, and the wedge becomes its own
+region and gets an exact outline.
+
+Two rules follow. Trim ends by a *distance* (one radius, which is how far a cap
+reaches), never by a percentage — a tenth of a long run is far more than a cap.
+And when a summary statistic exists to detect something, check that it can still
+see it after every filter upstream of it.
 
 The rule underneath: **an outline tracer is safe exactly where one traced region
 is also one animatable part.** A beak, yes. A whole bird, no.
@@ -97,6 +151,37 @@ potrace is optional. Without it those shapes fall back to constant-width strokes
 and `trace` says so; install it with `brew install potrace` for the better
 result. Note that `magick in.png out.svg` also silently delegates to potrace, so
 that route has the same properties.
+
+### A fitted circle beats the points it was fitted to
+
+If a run is really an arc or a line, `trace` emits `arc({ cx, cy, r })` or
+`line({ from, to })` instead of a point list. This is an **accuracy** step that
+happens to also be tidier, which is the opposite of how it reads.
+
+Forty points are forty independent measurements, each carrying its own lattice
+and thinning noise, and simplification makes it worse: Douglas-Peucker bounds the
+deviation but always takes it on one side of a convex curve, so every simplified
+arc is inscribed inside the true one and comes out systematically small. A circle
+has three parameters solved from every sample at once, so the noise averages out
+and the result is a better estimate of the artwork than any point it was fitted
+to. On the crane the two halves of the ring were fitted *separately* and landed
+on the same centre and radius to within a tenth of a pixel; the leg came out
+exactly vertical and the foot exactly horizontal. That is the construction
+geometry of the original drawing, recovered.
+
+Both fits reject outliers first, and must. Where two strokes cross, the largest
+circle that fits inside the *union* is bigger than the one inside either stroke,
+so the skeleton bulges off the true path for as long as the overlap lasts. Those
+samples are wrong, not merely noisy: on the ring they took the worst residual
+from 1.0px to 5.8px and would have rejected a fit that was right. The fitted arc
+then runs correctly straight through the crossing, which is exactly where the
+skeleton could not.
+
+A fit is accepted on two conditions, and neither covers the other. The residual
+catches gross curvature — but trimming cannot, because an arc's distances from
+its chord are large yet evenly spread, so nothing stands out as an outlier. The
+share of the run described catches a run that is straight and then bends, where
+the surviving fit is excellent and only the discarded fraction gives it away.
 
 ## 2. Group the strokes into parts
 

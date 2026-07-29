@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  type Mask, distanceField, skeletonise, traceSkeleton, simplify, strokes, encodePng,
+  type Mask, type Bitmap, distanceField, radiusField, coverage, softOverlap,
+  skeletonise, traceSkeleton, simplify, strokes, encodePng,
 } from '../src/index.ts';
+import { fitCircle, fitLine } from '../src/fit.ts';
 
 /** A blank canvas to paint test shapes onto. */
 function blank(w: number, h: number): Mask {
@@ -72,12 +74,194 @@ test('a fork stays three runs, because that is where a limb separates', () => {
 });
 
 test('measured width comes back as the width that was drawn', () => {
+  // The tolerance is deliberately tighter than one pixel. It used to be 1.5,
+  // which is wider than the error it was supposed to be guarding: the distance
+  // field measures to the nearest background pixel's *centre* rather than to the
+  // edge of the ink, so every width came back exactly 1.0 too large and the
+  // assertion waved it through. Uniform over a whole scene, that was 2.4% of
+  // invented ink, invisible to every other check in the suite.
+  for (const width of [11, 15, 21]) {
+    const m = blank(200, 60);
+    hline(m, 20, 180, 30, width);
+    const found = strokes(m);
+    assert.equal(found.length, 1);
+    assert.ok(
+      Math.abs(found[0].width - width) <= 0.5,
+      `a band of ${width} rows should measure ${width}, measured ${found[0].width}`,
+    );
+    assert.ok(found[0].widthVariation < 1.2, 'a drawn line holds one width');
+  }
+});
+
+test('the radius field measures to the edge of the ink, not to the next pixel', () => {
+  const m = blank(60, 40);
+  hline(m, 5, 55, 20, 11);
+  const raw = distanceField(m);
+  const r = radiusField(raw);
+  // Eleven rows of ink span from y=14.5 to y=25.5, so the centre row sits 5.5
+  // from the boundary while the nearest background pixel's centre is 6 away.
+  assert.equal(Math.sqrt(raw[20 * 60 + 30]), 6, 'the raw field counts whole pixels');
+  assert.equal(r[20 * 60 + 30], 5.5, 'the radius field counts to the edge');
+});
+
+test('a centreline lands between pixels when that is where it belongs', () => {
+  // An even-numbered band has its true centre on a boundary between two rows, so
+  // a whole-pixel skeleton cannot sit on it and must be half a pixel out. On a
+  // fine-lined mark half a pixel is worth several points of overlap, so the fit
+  // has to resolve below the lattice or the error is unreachable.
   const m = blank(200, 60);
-  hline(m, 20, 180, 30, 15);
+  hline(m, 20, 180, 30, 16);
   const found = strokes(m);
   assert.equal(found.length, 1);
-  assert.ok(Math.abs(found[0].width - 15) <= 1.5, `expected ~15, measured ${found[0].width}`);
-  assert.ok(found[0].widthVariation < 1.2, 'a drawn line holds one width');
+  const mid = found[0].ridge[Math.floor(found[0].ridge.length / 2)];
+  // Sixteen rows, 22 through 37, so the ink spans y 21.5 to 37.5 and its centre
+  // is 29.5 -- squarely between two rows, and unreachable by a whole-pixel
+  // skeleton, which must answer either 29 or 30 and be half a pixel out.
+  assert.ok(
+    Math.abs(mid[1] - 29.5) < 0.25,
+    `the centre of rows 22..37 lies at y=29.5, fitted ${mid[1].toFixed(2)}`,
+  );
+  assert.ok(!Number.isInteger(mid[1]), 'a sub-pixel fit does not land on the lattice');
+});
+
+test('a wedge growing out of a band is cut off it, not averaged into it', () => {
+  // The medial axis runs straight from a neck into a beak without forking, so
+  // both arrive as one branch. Measured together the taper vanishes into the
+  // percentiles, the whole run is drawn at one width, and the wedge gets a blunt
+  // round cap partway along its point. That single mistake was two-thirds of all
+  // the ink the traced crane invented.
+  const m = blank(320, 80);
+  hline(m, 20, 200, 40, 17);
+  for (let x = 200; x < 300; x++) {
+    const half = 8.5 * (1 - (x - 200) / 100);
+    for (let y = Math.ceil(40 - half); y < 40 + half; y++) m.data[y * 320 + x] = 1;
+  }
+  const found = strokes(m);
+  assert.ok(found.length >= 2, `the band and the wedge are two shapes, got ${found.length}`);
+  const band = found[0];
+  const wedge = found[1];
+  assert.ok(band.widthVariation < 1.35, `the band holds its width, got ${band.widthVariation}`);
+  assert.ok(wedge.widthVariation > 1.35, `the wedge reads as tapering, got ${wedge.widthVariation}`);
+  assert.ok(
+    Math.abs(band.width - 17) <= 1,
+    `cutting the wedge off leaves the band's own width, got ${band.width}`,
+  );
+});
+
+test('a cut end is measured as cut rather than assumed to be round', () => {
+  // A flat end drawn with a round cap bulges past the tip and leaves the corners
+  // bare. Both ends leave the skeleton one radius short, so the distance cannot
+  // tell them apart -- only the profile can.
+  const cut = blank(200, 60);
+  hline(cut, 20, 180, 30, 17);
+  assert.equal(strokes(cut)[0].cap, 'butt', 'a square-ended band has cut ends');
+
+  const capped = blank(200, 60);
+  hline(capped, 20, 180, 30, 17);
+  for (const [cx, sign] of [[20, -1], [180, 1]] as const) {
+    for (let dx = 0; dx <= 9; dx++) {
+      for (let dy = -9; dy <= 9; dy++) {
+        if (dx * dx + dy * dy > 72) continue;
+        capped.data[(30 + dy) * 200 + cx + sign * dx] = 1;
+      }
+    }
+  }
+  assert.equal(strokes(capped)[0].cap, 'round', 'a band with domed ends is round-capped');
+});
+
+test('a circle is recovered from its samples, and survives a crossing', () => {
+  const truth = { cx: 400, cy: 310, r: 180 };
+  const pts: [number, number][] = [];
+  for (let a = 20; a <= 250; a += 1.5) {
+    const rad = (a * Math.PI) / 180;
+    pts.push([truth.cx + truth.r * Math.cos(rad), truth.cy + truth.r * Math.sin(rad)]);
+  }
+
+  const clean = fitCircle(pts)!;
+  assert.ok(clean, 'a well-sampled arc admits a fit');
+  assert.ok(Math.abs(clean.r - truth.r) < 0.01, `radius ${clean.r}`);
+  assert.ok(Math.hypot(clean.cx - truth.cx, clean.cy - truth.cy) < 0.01, 'centre');
+  assert.ok(Math.abs(Math.abs(clean.to - clean.from) - 230) < 1, 'the sweep is the arc it saw');
+
+  // Where two strokes cross, the largest circle inside the union is bigger than
+  // the one inside either stroke, so the skeleton bulges off the true path for
+  // as long as the overlap lasts. Those samples are wrong, not merely noisy.
+  const fouled = pts.map((p, i): [number, number] =>
+    (i > 60 && i < 74 ? [p[0] * 1.045, p[1] * 1.045] : p));
+  const robust = fitCircle(fouled)!;
+  assert.ok(
+    Math.abs(robust.r - truth.r) < 1.5,
+    `a crossing must not drag the radius: ${robust.r} against ${truth.r}`,
+  );
+  assert.ok(robust.inliers < 1 && robust.inliers > 0.8, `the outliers are named, not hidden: ${robust.inliers}`);
+});
+
+test('a line is fitted without a preferred axis, so a vertical leg fits', () => {
+  // Fitting y against x has no answer for a vertical run, and a crane's leg is
+  // vertical.
+  const vertical: [number, number][] = [];
+  for (let y = 100; y <= 300; y += 4) vertical.push([512 + (y % 8 === 0 ? 0.05 : -0.05), y]);
+  const fit = fitLine(vertical)!;
+  assert.ok(fit, 'a vertical run admits a fit');
+  assert.ok(fit.error < 0.2, `residual ${fit.error}`);
+  assert.ok(Math.abs(fit.from[0] - 512) < 0.2 && Math.abs(fit.to[0] - 512) < 0.2, 'x is recovered');
+  assert.ok(Math.abs(Math.min(fit.from[1], fit.to[1]) - 100) < 1, 'the extent spans the run');
+
+  // The two ways a line fit goes wrong need two different guards, and neither
+  // one covers the other.
+  //
+  // Gross curvature is caught by the residual. It is not caught by trimming
+  // outliers: an arc's distances from its chord are large but evenly spread, so
+  // the median rises with them and nothing looks exceptional against it.
+  const curved: [number, number][] = [];
+  for (let a = 0; a < 90; a += 2) {
+    curved.push([200 * Math.cos((a * Math.PI) / 180), 200 * Math.sin((a * Math.PI) / 180)]);
+  }
+  const arc = fitLine(curved)!;
+  assert.ok(arc.error > 20, `an arc is not a line, residual ${arc.error.toFixed(1)}`);
+  assert.ok(arc.inliers > 0.9, 'and trimming cannot tell, because nothing is an outlier');
+
+  // A run that is straight and then bends is the opposite case: the surviving
+  // fit is excellent, and only the share it describes gives it away. Without
+  // that check this is accepted as a line and the bend is silently discarded.
+  const hooked: [number, number][] = [];
+  for (let y = 0; y < 80; y++) hooked.push([300, 100 + y]);
+  for (let k = 1; k <= 20; k++) hooked.push([300 + k * k * 0.08, 180 + k]);
+  const bend = fitLine(hooked)!;
+  assert.ok(bend.error < 1.5, `the straight part fits well on its own, residual ${bend.error.toFixed(2)}`);
+  assert.ok(bend.inliers < 0.85, `but it only describes part of the run, inliers ${bend.inliers.toFixed(2)}`);
+});
+
+test('coverage scores sub-pixel error that a threshold rounds away', () => {
+  // A threshold is a cliff and the whole boundary of a mark sits on it, so a
+  // binary score answers in steps and a sub-pixel correction can move nothing at
+  // all. Coverage has to respond to a fraction of a pixel or there is no signal
+  // for one to follow.
+  const grey = (v: number, w: number, h: number): Bitmap => {
+    const rgba = new Uint8Array(w * h * 4).fill(255);
+    return { width: w, height: h, rgba, scale: 1 };
+  };
+  const paint = (bm: Bitmap, edge: number): Bitmap => {
+    for (let y = 0; y < bm.height; y++) {
+      for (let x = 0; x < bm.width; x++) {
+        // A band whose right edge falls between pixels, so the edge column is
+        // partly covered exactly as a renderer would leave it.
+        const c = Math.max(0, Math.min(1, edge - x + 0.5));
+        const v = Math.round(255 * (1 - c));
+        for (let k = 0; k < 3; k++) bm.rgba[(y * bm.width + x) * 4 + k] = v;
+      }
+    }
+    return bm;
+  };
+
+  const a = coverage(paint(grey(0, 40, 10), 20));
+  const same = coverage(paint(grey(0, 40, 10), 20));
+  const nudged = coverage(paint(grey(0, 40, 10), 20.3));
+
+  assert.ok(softOverlap(a, same) > 99.9, 'identical fields overlap completely');
+  const drop = 100 - softOverlap(a, nudged);
+  assert.ok(drop > 0.5, `a third of a pixel has to register, got ${drop.toFixed(2)}%`);
+  assert.ok(drop < 8, `and it must not be reported as a catastrophe, got ${drop.toFixed(2)}%`);
 });
 
 test('a tapering shape is flagged rather than emitted as a stroke', () => {
