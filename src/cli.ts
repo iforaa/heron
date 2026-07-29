@@ -8,6 +8,7 @@
  *   trace     a reference image turned into measured geometry
  *   match     that geometry checked back against the reference
  *   snapshot  one pose, as an image the agent can actually look at
+ *   shapes    every run picked out in turn, which is how anatomy is decided
  *   sheet     several poses tiled, which is how motion is judged
  *   inspect   the same pose as numbers, when geometry is the question
  *   lint      defects that are invisible in a still frame
@@ -24,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
 
 import { Character } from './scene.ts';
-import { renderStatic, renderSheet, boxOfCorners, localCorners, sheetTimes, sheetWidth } from './render.ts';
+import { renderStatic, renderSheet, renderShapeSheet, listShapes, boxOfCorners, localCorners, sheetTimes, sheetWidth } from './render.ts';
 import { compile } from './compile.ts';
 import { lint, formatFindings } from './lint.ts';
 import { frameAt } from './timeline.ts';
@@ -81,6 +82,7 @@ const USAGE = `heron - compile character animation into a self-contained animate
                  [--fit 1.5] [--ribbons all|taper|none] [--refine 12]
   heron match    <scene.ts> <reference.png> [-o overlay.png] [-t 0]
   heron snapshot <scene.ts> [-t 0.4] [-o frame.png] [-w 520] [--svg]
+  heron shapes   <scene.ts> [-o shapes.png] [--cols 5] [--svg]
   heron sheet    <scene.ts> [-n 8] [-o sheet.png] [--cols 4] [--svg]
   heron inspect  <scene.ts> [-t 0.4]
   heron lint     <scene.ts>
@@ -170,6 +172,24 @@ async function main(): Promise<void> {
       const out = String(args.o ?? (args.svg ? 'frame.svg' : 'frame.png'));
       write(out, args.svg ? svg : toPng(svg, width));
       console.log(`${out}  (${ch.name} at t=${t})`);
+      break;
+    }
+
+    case 'shapes': {
+      const shapes = listShapes(ch);
+      const cols = num(args.cols, Math.min(5, Math.max(1, shapes.length)));
+      const svg = renderShapeSheet(ch, { cols });
+      const out = String(args.o ?? (args.svg ? 'shapes.svg' : 'shapes.png'));
+      const width = sheetWidth(cols);
+      write(out, args.svg ? svg : toPng(svg, width));
+      console.log(`${out}  ${shapes.length} shape(s), one per cell, the rest ghosted`);
+      const owners = new Map<string, number>();
+      for (const s of shapes) owners.set(s.path || '(root)', (owners.get(s.path || '(root)') ?? 0) + 1);
+      for (const [path, n] of owners) console.log(`  ${path}: ${n}`);
+      if (owners.size === 1) {
+        console.log(`  every shape sits in one part, so this is geometry with no anatomy yet -`);
+        console.log(`  use the sheet to decide which run is which limb before grouping them.`);
+      }
       break;
     }
 

@@ -21,6 +21,21 @@ export function shapeSvg(s: ShapeSpec): string {
 }
 
 /**
+ * Repaints a shape without caring what kind it is.
+ *
+ * `fill="none"` and `stroke="none"` are load-bearing — an arc is a stroked path
+ * with no fill, and painting that fill turns a thin ring into a solid disc. So
+ * `none` is left exactly where it is, and only real colours are replaced.
+ */
+function repaint(s: ShapeSpec, colour: string): ShapeSpec {
+  const attrs: Record<string, string | number> = { ...s.attrs };
+  for (const k of ['fill', 'stroke']) {
+    if (attrs[k] !== undefined && attrs[k] !== 'none') attrs[k] = colour;
+  }
+  return { tag: s.tag, attrs };
+}
+
+/**
  * The SVG transform attribute equivalent of the CSS the compiler emits.
  * Kept deliberately in the same order as `localMatrix`.
  */
@@ -35,10 +50,27 @@ export function transformAttr(p: NodePose, pivot?: Vec2): string {
   return parts.join(' ');
 }
 
-export function nodeSvg(node: Node, pose: Map<string, NodePose>, indent: string): string {
+/**
+ * Rewrites a shape on its way out, given its position in declaration order.
+ * Used to pick one shape out of the drawing; the index is the same `s0`, `s1` …
+ * that `listShapes` and a traced file both count in.
+ */
+export type Paint = (shape: ShapeSpec, index: number) => ShapeSpec;
+
+export function nodeSvg(node: Node, pose: Map<string, NodePose>, indent: string, paint?: Paint): string {
+  return nodeSvgAt(node, pose, indent, paint, { n: 0 });
+}
+
+function nodeSvgAt(
+  node: Node, pose: Map<string, NodePose>, indent: string, paint: Paint | undefined, count: { n: number },
+): string {
   const p = pose.get(node.path) ?? REST;
   const body = node.content
-    .map((item) => ('shape' in item ? indent + '  ' + shapeSvg(item.shape) : nodeSvg(item.node, pose, indent + '  ')))
+    .map((item) => {
+      if (!('shape' in item)) return nodeSvgAt(item.node, pose, indent + '  ', paint, count);
+      const i = count.n++;
+      return indent + '  ' + shapeSvg(paint ? paint(item.shape, i) : item.shape);
+    })
     .join('\n');
 
   const t = transformAttr(p, node.pivot);
@@ -120,6 +152,79 @@ export function renderSheet(ch: Character, times: number[], opts: { cols?: numbe
     <text x="${cx + 6}" y="${cy + chh + 14}" font-family="ui-monospace,monospace" font-size="11" fill="#68757f">t=${t.toFixed(2)}</text>
     <svg x="${cx}" y="${cy}" width="${cw}" height="${chh}" viewBox="${vx} ${vy} ${vw} ${vh}">
 ${nodeSvg(ch.root, pose, '      ')}
+    </svg>
+  </g>`;
+  });
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <rect width="${W}" height="${H}" fill="#eef1f3"/>
+${cells.join('\n')}
+</svg>
+`;
+}
+
+// --- shape identification ----------------------------------------------------
+
+/** One drawn shape, and which part owns it. */
+export interface ShapeRef {
+  /** Position in declaration order, matching the `s0`, `s1` … in a traced file. */
+  index: number;
+  /** Dotted path of the owning part, or `''` at the root. */
+  path: string;
+  shape: ShapeSpec;
+}
+
+/** Every shape in the drawing, in declaration order. */
+export function listShapes(ch: Character): ShapeRef[] {
+  const out: ShapeRef[] = [];
+  const walk = (node: Node): void => {
+    for (const item of node.content) {
+      if ('shape' in item) out.push({ index: out.length, path: node.path, shape: item.shape });
+      else walk(item.node);
+    }
+  };
+  walk(ch.root);
+  return out;
+}
+
+const GHOST = '#dee3e7';
+const PICK = '#e03131';
+
+/**
+ * One cell per shape, each showing the whole drawing with that shape picked out.
+ *
+ * This exists because deciding *which ink is which part* is the one step of the
+ * pipeline with no instrument on it, and it is where the mistakes happen. A
+ * traced file names its runs `s0`, `s1`, `s2`; nothing about those names says
+ * which is a leg, and a bounding box does not say either — a box around a folded
+ * limb and a box around a leaf are the same rectangle. Seeing each run lit up
+ * inside the whole drawing answers it immediately, and answers it before the
+ * grouping is written rather than after the animation looks wrong.
+ *
+ * Rendered at rest, deliberately. This is a question about anatomy, not motion.
+ */
+export function renderShapeSheet(ch: Character, opts: { cols?: number; cellWidth?: number } = {}): string {
+  const shapes = listShapes(ch);
+  const [vx, vy, vw, vh] = ch.viewBox;
+  const cols = opts.cols ?? Math.min(5, Math.max(1, shapes.length));
+  const rows = Math.ceil(shapes.length / cols);
+  const cw = opts.cellWidth ?? SHEET_CELL;
+  const chh = round((cw * vh) / vw);
+  const pad = SHEET_PAD;
+  const W = sheetWidth(cols, cw);
+  const H = rows * (chh + SHEET_LABEL) + pad * (rows + 1);
+  const pose = evaluate(ch, 0);
+
+  const cells = shapes.map((ref, i) => {
+    const cx = pad + (i % cols) * (cw + pad);
+    const cy = pad + Math.floor(i / cols) * (chh + SHEET_LABEL + pad);
+    const body = nodeSvg(ch.root, pose, '      ', (s, at) => repaint(s, at === ref.index ? PICK : GHOST));
+    const label = ref.path ? `s${ref.index}  ${ref.path}` : `s${ref.index}`;
+    return `  <g>
+    <rect x="${cx}" y="${cy}" width="${cw}" height="${chh + SHEET_LABEL}" fill="#ffffff" stroke="#dfe4e8"/>
+    <text x="${cx + 6}" y="${cy + chh + 14}" font-family="ui-monospace,monospace" font-size="11" fill="#68757f">${label}</text>
+    <svg x="${cx}" y="${cy}" width="${cw}" height="${chh}" viewBox="${vx} ${vy} ${vw} ${vh}">
+${body}
     </svg>
   </g>`;
   });

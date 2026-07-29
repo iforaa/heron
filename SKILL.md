@@ -16,8 +16,8 @@ them was added after eyeballing something produced a defect nobody could see.
 GEOMETRY   heron trace icon.png -o scene.ts   ->  heron match scene.ts icon.png
               measure it, never eyeball it         until it says "shapes line up"
 
-ANATOMY    group the strokes into jointed parts  ->  heron match again
-              this part is judgement, not pixels     the rest pose must not drift
+ANATOMY    heron shapes scene.ts  ->  group the strokes into jointed parts  ->  heron match again
+              which run is which        this part is judgement, not pixels     the rest pose must not drift
 
 MOTION     animate  ->  heron sheet scene.ts  ->  look  ->  heron lint  ->  fix
 ```
@@ -357,6 +357,7 @@ Other options worth knowing when a gait misbehaves:
 ## 4. Look at it
 
 ```bash
+heron shapes scene.ts -o shapes.png       # one cell per run - which ink is which part
 heron sheet scene.ts -n 8 -o sheet.png     # eight poses tiled - the default check
 heron snapshot scene.ts -t 0.62 -o f.png   # one pose, e.g. the push-off frame
 heron inspect scene.ts -t 0.3              # the same pose as numbers

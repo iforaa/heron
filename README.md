@@ -30,6 +30,7 @@ with joints, and the CLI lets the agent look at what it made.
 ## The loop
 
 ```bash
+heron shapes crane.ts -o shapes.png      # one cell per run, to see which ink is which part
 heron sheet crane.ts -n 8 -o sheet.png   # eight poses tiled, as one image
 heron inspect crane.ts -t 0.3            # the same pose as numbers
 heron lint crane.ts                      # defects invisible in a still frame

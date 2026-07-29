@@ -428,18 +428,25 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
  *      Overlap should already be high. If it is not, re-run \`heron trace\` with a
  *      different --epsilon or --threshold rather than hand-editing points.
  *
- *   2. Group the strokes into named parts, nesting them the way the body is
+ *   2. See which run is which before grouping anything:
+ *        heron shapes ${self}
+ *      One cell per run, lit up inside the whole drawing. Do not skip this and
+ *      work from the boxes below instead — a box around a folded limb and a box
+ *      around a leaf are the same rectangle, and guessing here is how a bird
+ *      ends up with a third leg that never moves.
+ *
+ *   3. Group the strokes into named parts, nesting them the way the body is
  *      jointed: a shin lives inside a thigh, so it follows when the thigh turns.
  *      Keep the numbers below exactly as they are while you do this. They were
  *      measured; anything you retype by eye is a guess re-entering the file.
  *
- *   3. Give every moving part a \`pivot\`, at the joint's coordinate in this same
+ *   4. Give every moving part a \`pivot\`, at the joint's coordinate in this same
  *      space. A pivot is a position, not an offset.
  *
- *   4. Set \`ground\` on the character to the y of the floor, or the contact
+ *   5. Set \`ground\` on the character to the y of the floor, or the contact
  *      lints cannot run at all.
  *
- *   5. Only then animate, and re-run \`heron match\` afterwards to confirm the
+ *   6. Only then animate, and re-run \`heron match\` afterwards to confirm the
  *      rest pose still matches the reference.
  *
  * Two things this trace could not know, and you must decide:

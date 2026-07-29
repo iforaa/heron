@@ -274,3 +274,33 @@ test('walkCycle parameters change the motion they claim to', () => {
 
   assert.ok(Math.abs(at(big.thigh, 0)) > Math.abs(at(small.thigh, 0)), 'a bigger reach is a longer stride');
 });
+
+test('the shape sheet lists every shape in order, with the part that owns it', async () => {
+  const { listShapes } = await import('../src/render.ts');
+  const found = listShapes(crane);
+  assert.ok(found.length > 5, `crane should have several shapes, got ${found.length}`);
+  assert.deepEqual(found.map((s) => s.index), found.map((_, i) => i), 'indices count in declaration order');
+  // The label is what makes a cell readable, so every shape has to know its
+  // owner. A shape whose path went missing is a shape nobody can place.
+  assert.ok(found.every((s) => typeof s.path === 'string'), 'every shape reports an owning path');
+  assert.ok(found.some((s) => s.path.includes('head')), 'and the head owns some of them');
+});
+
+test('picking a shape out never fills a stroked one', async () => {
+  const { renderShapeSheet, listShapes } = await import('../src/render.ts');
+  const ring = character('ring', { viewBox: [0, 0, 100, 100], duration: 1 }, () => {
+    circle({ cx: 50, cy: 50, r: 40, stroke: '#000', width: 4 });
+    circle({ cx: 50, cy: 50, r: 5, fill: '#000' });
+  });
+  assert.equal(listShapes(ring).length, 2);
+  const svg = renderShapeSheet(ring, { cols: 2 });
+  // `fill="none"` is load-bearing: repainting it turns the ring into a disc,
+  // which is what an earlier throwaway version of this sheet actually did, and
+  // it reads as a tracing bug rather than a rendering one.
+  const rings = [...svg.matchAll(/<circle[^>]*r="40"[^>]*\/>/g)].map((m) => m[0]);
+  assert.equal(rings.length, 2, 'one ring per cell');
+  assert.ok(rings.every((r) => r.includes('fill="none"')), 'the ring keeps its hole in every cell');
+  // And the picked shape really is repainted, or the sheet shows nothing.
+  assert.ok(rings.some((r) => r.includes('stroke="#e03131"')), 'the ring is picked out in its own cell');
+  assert.ok(rings.some((r) => r.includes('stroke="#dee3e7"')), 'and ghosted in the other');
+});
