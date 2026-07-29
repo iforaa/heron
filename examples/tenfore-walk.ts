@@ -8,9 +8,10 @@
  *
  * Three decisions the trace could not make, and why they went this way:
  *
- *   - THE RING IS NOT THE BIRD. It is the frame the bird walks inside, so it
- *     lives in a static layer and never bobs. Nesting it under `body` would
- *     make the whole logo bounce, which reads as a jelly, not a walk.
+ *   - THE RING IS GONE. It reads as a frame around a still mark, and a frame is
+ *     exactly what a walk does not want: the bird strides while the ring holds
+ *     it in place, so the eye reads a bird trapped in a hoop rather than one
+ *     going somewhere. Dropped for the animation; the icon keeps it.
  *
  *   - THE TUCK IS A POSE, NOT ANATOMY. The mark shows a heron standing on one
  *     leg with the other drawn up. A one-legged bird cannot walk, so the second
@@ -19,7 +20,8 @@
  *     now exists properly.
  *
  *   - THE PLANT STAYS ON THE FLOOR. The leaf below left is scenery, not part of
- *     the bird, so it sits in the frame with the ring.
+ *     the bird, so it stays in a static layer and never bobs. Nesting it under
+ *     `body` would have it bounce along with the stride, which reads as jelly.
  *
  * Joints are measured, not guessed. The hip and knee sit on forks that `trace`
  * reported at (509, 579) and (504, 738), and the floor is the lowest ink in the
@@ -87,41 +89,15 @@ function leg(name: string, tint: string, dx: number, dy: number): void {
 
 export const tenforeWalk: Character = character(
   'tenforeWalk',
-  { viewBox: [0, 0, 1024, 1024], duration: 1.25, ground: GROUND },
+  // Cropped to the ink, measured over the whole cycle rather than the rest pose
+  // — the swinging leg reaches wider than a still frame shows. Without the ring
+  // the square canvas is mostly empty, and a portrait box is what a standing
+  // bird actually occupies.
+  { viewBox: [215, 18, 589, 981], duration: 1.25, ground: GROUND },
   () => {
-    // The frame: everything that is not the bird. Outside `body`, so the bob
-    // cannot reach it.
+    // Scenery: on the floor, not on the bird. Outside `body`, so the bob cannot
+    // reach it.
     layer('frame', () => {
-      ribbon([
-        [437.1, 75.6], [439.3, 75.6], [441.3, 75.5], [442.3, 75.4], [445.7, 75.2], [474.4, 70.8],
-        [477.3, 70.5], [489.8, 69.3], [501.7, 68.6], [508.8, 68.5], [515.9, 68.5], [523, 68.6],
-        [529, 68.9], [550, 70.5], [551, 70.6], [575.1, 73.9], [583.9, 75.6], [591.9, 77.3],
-        [606.7, 81], [611.9, 82.4], [616.7, 83.9], [622.8, 85.7], [654.7, 97.7], [688.8, 114.4],
-        [715.9, 131.3], [745.9, 154.1], [777.9, 185.1], [788.1, 196.9], [795.7, 206.2], [813, 230],
-        [830.9, 260.1], [848.7, 299.7], [858.9, 330.8], [867.9, 371.9], [869.4, 382.7], [870.7, 394.9],
-        [871.5, 405.8], [871.9, 413], [872, 441], [871.6, 448.2], [870.8, 459.1], [869.5, 471.3],
-        [868.1, 482.1], [859.2, 523.3], [847.6, 558.2], [833.5, 590.2], [813.6, 624.3], [798.6, 645.4],
-        [786.5, 660.4], [767.3, 681.3], [745.4, 701.5], [715.3, 724.5], [691.3, 739.6], [666.3, 752.5],
-        [629.2, 767.7], [616.1, 772], [602.9, 775.5], [594.9, 777.2], [588.9, 778.3], [563.9, 782.9],
-        [562.8, 783.4], [561.8, 784], [560.8, 784.6], [559.9, 785.4], [557.8, 788.3], [557.3, 789.4],
-      ], [
-        17.3, 17.6, 17.8, 17.9, 18.2, 18.1,
-        18.1, 18, 18, 18, 18, 18.1,
-        18.1, 18.1, 18.1, 18.1, 18.1, 18.2,
-        18.2, 18.1, 18.1, 18.1, 18.2, 18.2,
-        18.2, 18.4, 18.4, 18.3, 18.2, 18.1,
-        18.2, 18, 18, 18.1, 18.1, 18.1,
-        18.1, 18, 18, 18, 18, 18,
-        17.9, 17.8, 18, 17.9, 17.8, 17.9,
-        17.9, 17.9, 17.9, 17.8, 17.8, 17.8,
-        18, 17.8, 17.9, 18, 18.2, 17.5,
-        17.2, 16.8, 16.3, 15.8, 13.7, 12.9,
-      ], { fill: INK });
-
-      arc({ cx: 512.7, cy: 427.8, r: 358.8, from: -129.9, to: -248.7, stroke: INK, width: 35.2 });
-
-      path({ d: 'M 289 149 c -4 5 -5 6 -4 7 2 1 2 1 1 3 -2 1 -2 2 2 5 l 4 4 6 -5 c 4 -3 7 -6 7 -7 1 0 -1 -3 -4 -6 -3 -3 -6 -6 -6 -6 0 0 -3 2 -6 5 z', fill: INK });
-
       ribbon([
         [432.6, 803], [430.4, 803.4], [422, 806.7], [418.1, 809.6], [417.2, 810.4], [413.5, 814.9],
         [409.9, 821.8], [408.9, 824.5], [404.7, 839.1], [399.7, 861.8], [398.9, 866.1], [397.9, 874],
@@ -159,8 +135,6 @@ export const tenforeWalk: Character = character(
         17.2, 17.3, 17.3, 17.4, 17.4, 17.5,
         17.5, 17.6, 17.7,
       ], { fill: INK });
-
-      path({ d: 'M 384 746 c -1 2 -2 3 -1 3 0 1 0 2 -1 3 -1 1 -1 1 1 3 1 2 2 3 1 4 -1 0 1 3 5 7 l 7 6 8 -9 9 -9 -3 -1 c -7 -3 -17 -6 -19 -7 -1 0 -2 -1 -3 -1 0 -2 -1 -1 -4 1 z', fill: INK });
 
       ribbon([
         [425.8, 870], [425.2, 876.1], [425.5, 878], [427.1, 881.6], [437, 890],
@@ -291,14 +265,6 @@ export const tenforeWalk: Character = character(
             18.5, 18.4, 18.3, 18.2, 18.1, 18,
             18, 17.9, 17.9, 17.9, 17.9, 17.8,
             17.8, 17.9, 18, 17.9, 17.8,
-          ], { fill: INK });
-
-          ribbon([
-            [389.1, 73.8], [393, 73.3], [410, 72.7], [420.9, 73.2], [427.8, 73.7], [431, 73.9],
-            [433.1, 74], [437.9, 74.1],
-          ], [
-            2.1, 3.2, 8, 11, 12.8, 13.6,
-            14.1, 15.2,
           ], { fill: INK });
         });
       });
