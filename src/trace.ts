@@ -240,6 +240,7 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
   // Which primitives the generated file actually uses, recorded where each one
   // is written rather than recovered afterwards by searching the output for it.
   const used = new Set(['character', 'layer']);
+  let profiled = 0;
 
   /**
    * A run that is really a circle or a line is emitted as one.
@@ -315,6 +316,7 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
     const mode = o.ribbons ?? 'all';
     if (mode === 'all' || (mode === 'taper' && tapering[i])) {
       used.add('ribbon');
+      profiled++;
       return `${head}    //   width runs ${n1(Math.min(...k.widths) * 2 / s)} to ${n1(Math.max(...k.widths) * 2 / s)}, `
         + `so this is a measured profile rather than one number.\n`
         + `    ribbon([\n${pointList(k.points, s)},\n    ], [\n`
@@ -405,6 +407,6 @@ export default ${name};
     joints: joints.map((j): Vec2 => [Math.round(j[0] / s), Math.round(j[1] / s)]),
     outlined: outline.size,
     fitted: shape.size,
-    profiled: (source.match(/\n {4}ribbon\(\[/g) ?? []).length,
+    profiled,
   };
 }
