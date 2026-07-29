@@ -22,6 +22,9 @@ import {
 } from './raster.ts';
 import { hasPotrace, outlinePaths } from './outline.ts';
 import { fitCircle, fitLine } from './fit.ts';
+import { type RefineReport, refine } from './refine.ts';
+import { coverage } from './raster.ts';
+import { arcPath } from './scene.ts';
 import type { Vec2 } from './scene.ts';
 
 export interface TraceOptions {
@@ -50,6 +53,11 @@ export interface TraceOptions {
    * centreline, `none` never.
    */
   ribbons?: 'taper' | 'all' | 'none';
+  /**
+   * Passes of reference-driven correction after tracing. 0 turns it off.
+   * Each pass costs one render of the scene.
+   */
+  refine?: number;
 }
 
 export interface TraceResult {
@@ -68,6 +76,8 @@ export interface TraceResult {
   fitted: number;
   /** Runs emitted with a measured width profile rather than a single width. */
   profiled: number;
+  /** What the correction pass changed, if it ran. */
+  tuned: RefineReport | null;
 }
 
 /** Above this, a run is tapering rather than holding one width. */
@@ -80,6 +90,16 @@ const MOSTLY = 0.85;
 const MIN_SWEEP = 20;
 /** An arc whose radius dwarfs its own extent is a straight line in disguise. */
 const MAX_RADIUS = 5;
+/**
+ * How much slack a fit gets once the correction pass has run.
+ *
+ * Correction moves points to where the ink actually is, and the ink is not
+ * exactly on any circle, so points judged afterwards no longer sit on one to
+ * within the tolerance they started at. Holding them to it rejects the ring
+ * outright; allowing the wobble lets the fit average it away, which is the whole
+ * reason to fit rather than to keep the points.
+ */
+const RELAXED = 2;
 
 /**
  * Snaps measured widths onto the few pen weights the drawing was made with.
@@ -202,6 +222,8 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
   // splitter's idea of a taper and the emitter's to disagree.
   const tapering = found.map((k) => k.widthVariation > TAPER);
   const varying = tapering.filter(Boolean).length;
+  // Shapes the correction pass renders but never moves, in reference pixels.
+  const fixed: string[] = [];
   const self = o.out ?? 'scene.ts';
 
   /**
@@ -229,7 +251,10 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
       // with a hole. They are still one part, and potrace winds them so nonzero
       // fill does the right thing, so they concatenate into one path rather
       // than being discarded.
-      if (paths?.length && paths.join('').length > 8) outline.set(i, paths.join(' '));
+      if (paths?.length && paths.join('').length > 8) {
+        outline.set(i, paths.join(' '));
+        fixed.push(`<path d="${paths.join(' ')}" fill="${colour}"/>`);
+      }
     });
   }
 
@@ -243,20 +268,65 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
   let profiled = 0;
 
   /**
+   * Correction runs before the shapes are named, not after, and the order is the
+   * whole point.
+   *
+   * Fitting first freezes a circle from the raw trace and puts it beyond reach:
+   * measured with fits held fixed the scene reaches 94.6%, and with no fits at
+   * all — so that every run is free to move — it reaches 94.8%. Neither is the
+   * answer, because the first gives up accuracy and the second gives up saying
+   * "this is a ring".
+   *
+   * Correcting first and fitting afterwards gives up neither. Every run is a
+   * ribbon while the reference is pulling on it, and only once it has settled is
+   * it asked what shape it turned out to be — so the circle is solved from
+   * corrected samples rather than from the first guess.
+   */
+  const movable: number[] = [];
+  found.forEach((_, i) => { if (!outline.has(i)) movable.push(i); });
+
+  let tuned: RefineReport | null = null;
+  const passes = o.refine ?? 12;
+  if (passes > 0 && movable.length) {
+    const res = refine(
+      fixed,
+      movable.map((i) => ({
+        points: found[i].points.map((p): Vec2 => [p[0], p[1]]),
+        widths: [...found[i].widths],
+        closed: found[i].closed,
+        cap: found[i].cap,
+      })),
+      coverage(bm), colour, { rounds: passes },
+    );
+    res.ribbons.forEach((r, n) => {
+      found[movable[n]].points = r.points;
+      found[movable[n]].widths = r.widths;
+    });
+    tuned = res.report;
+  }
+
+  /**
    * A run that is really a circle or a line is emitted as one.
    *
    * The straight fit is tried first. A short, gently curved run will also admit
    * some enormous circle that passes through it, and describing a leg as a
    * 4000-pixel arc is true, useless, and impossible to animate.
+   *
+   * A primitive carries one width, so it is only offered where the corrected
+   * profile is near enough to flat to lose nothing by saying so.
    */
-  const tol = o.fit ?? 1.5;
+  const tol = (o.fit ?? 1.5) * (tuned ? RELAXED : 1);
   const shape = new Map<number, string>();
   if (tol > 0) {
     found.forEach((k, i) => {
-      if (tapering[i] || k.ridge.length < 8) return;
+      if (outline.has(i) || tapering[i] || k.points.length < 5) return;
+      // The same bar as everywhere else for "holds one width", rather than a
+      // second opinion about the same question.
+      const flat = Math.max(...k.widths) / Math.max(0.5, Math.min(...k.widths));
+      if (flat > TAPER) return;
       const tail = `stroke: INK, width: ${n1(pen[i] / s)}${k.cap === 'butt' ? `, cap: 'butt'` : ''}`;
 
-      const straight = fitLine(k.ridge);
+      const straight = fitLine(k.points);
       if (straight && straight.error <= tol && straight.inliers >= MOSTLY) {
         used.add('line');
         shape.set(i, `    //   a straight line, within ${n1(straight.error / s)}px over its whole length\n`
@@ -265,19 +335,21 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
         return;
       }
 
-      const round = fitCircle(k.ridge);
+      const round = fitCircle(k.points);
       if (!round || round.error > tol || round.inliers < MOSTLY) return;
       const sweep = Math.abs(round.to - round.from);
-      const [x0, y0, x1, y1] = bounds(k.ridge, 1);
+      const [x0, y0, x1, y1] = bounds(k.points, 1);
       if (sweep < MIN_SWEEP || round.r > Math.hypot(x1 - x0, y1 - y0) * MAX_RADIUS) return;
       const arcArgs = `cx: ${n1(round.cx / s)}, cy: ${n1(round.cy / s)}, r: ${n1(round.r / s)}`;
-      const angles = k.closed || sweep >= 359 ? '' : `, from: ${n1(round.from)}, to: ${n1(round.to)}`;
+      const whole = k.closed || sweep >= 359;
+      const angles = whole ? '' : `, from: ${n1(round.from)}, to: ${n1(round.to)}`;
       used.add('arc');
-      shape.set(i, `    //   a circle, within ${n1(round.error / s)}px over ${Math.round(sweep)} degrees. Fitted\n`
-        + `    //   from ${k.ridge.length} samples, so it is a better estimate than any of them.\n`
+      shape.set(i, `    //   a circle, within ${n1(round.error / s)}px over ${Math.round(sweep)} degrees, fitted\n`
+        + `    //   from ${k.points.length} corrected samples.\n`
         + `    arc({ ${arcArgs}${angles}, ${tail} });`);
     });
   }
+  const mode = o.ribbons ?? 'all';
 
   const body = found.map((k, i) => {
     const box = `[${bounds(k.points, s).map(Math.round).join(' ')}]`;
@@ -313,7 +385,6 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
      * where one number cannot be, and unlike a traced outline it keeps the
      * centreline, so the shape can still be posed.
      */
-    const mode = o.ribbons ?? 'all';
     if (mode === 'all' || (mode === 'taper' && tapering[i])) {
       used.add('ribbon');
       profiled++;
@@ -408,5 +479,6 @@ export default ${name};
     outlined: outline.size,
     fitted: shape.size,
     profiled,
+    tuned,
   };
 }

@@ -119,6 +119,11 @@ async function main(): Promise<void> {
       console.log(`  measured widths: ${[...new Set(w.map((v) => v.toFixed(0)))].sort((a, b) => +a - +b).join(', ')} px`);
     }
     const bends = res.strokes.filter((s) => s.corners.length).length;
+    if (res.tuned) {
+      const t = res.tuned;
+      console.log(`  corrected against the reference: overlap ${t.before.toFixed(1)}% -> ${t.after.toFixed(1)}%`);
+      console.log(`    over ${t.rounds} pass(es), moving points by at most ${t.moved.toFixed(1)}px`);
+    }
     if (res.profiled) {
       console.log(`  ${res.profiled} run(s) carry a measured width at every point, so a taper is drawn as`);
       console.log(`    measured rather than flattened to one number - and keeps its centreline`);

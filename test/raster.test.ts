@@ -297,6 +297,43 @@ test('a width profile survives simplification, and a flat one costs nothing', ()
   assert.ok(straight.points.length <= 4, `a flat profile adds no points, got ${straight.points.length}`);
 });
 
+test('the reference pulls a wrong stroke back onto itself', async () => {
+  const { refine } = await import('../src/refine.ts');
+
+  const draw = (d: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">`
+    + `<rect width="240" height="120" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+
+  const line: [number, number][] = [];
+  for (let x = 40; x <= 200; x += 8) line.push([x, 60]);
+
+  // The truth: half-width 18, centred on y=60.
+  const truth = coverage(rasterise(draw(ribbonPath(line, line.map(() => 18))), 240, 120));
+
+  // The guess is wrong in both ways the loop is meant to separate -- too narrow
+  // everywhere, and sitting three pixels off to one side.
+  const guess = {
+    points: line.map(([x, y]): [number, number] => [x, y + 3]),
+    widths: line.map(() => 12),
+    closed: false,
+    cap: 'round' as const,
+  };
+
+  const { ribbons, report } = refine([], [guess], truth, '#000', { rounds: 10 });
+  assert.ok(report.after > report.before, `the score has to improve: ${report.before} to ${report.after}`);
+  assert.ok(report.after > 97, `and land close to the truth, got ${report.after.toFixed(1)}%`);
+
+  const mid = Math.floor(line.length / 2);
+  assert.ok(
+    Math.abs(ribbons[0].widths[mid] - 18) < 2.5,
+    `width should find 18, got ${ribbons[0].widths[mid].toFixed(1)}`,
+  );
+  assert.ok(
+    Math.abs(ribbons[0].points[mid][1] - 60) < 1.5,
+    `and the centreline should find y=60, got ${ribbons[0].points[mid][1].toFixed(1)}`,
+  );
+});
+
 test('coverage scores sub-pixel error that a threshold rounds away', () => {
   // A threshold is a cliff and the whole boundary of a mark sits on it, so a
   // binary score answers in steps and a sub-pixel correction can move nothing at
