@@ -2,10 +2,14 @@
  * Static rendering: one pose, one SVG. This is what the agent looks at.
  */
 
-import type { Character, Node, PaintDefinition, ShapeSpec, Vec2 } from './scene.ts';
+import type { Character, Node, PaintDefinition, ShapeSpec, Vec2, ViewBox } from './scene.ts';
 import type { CueSheet, Score } from './score.ts';
+// Type-only, so no runtime cycle appears even though track.ts imports geometry
+// from here. Restating these shapes structurally would let the drawing and the
+// measurement drift apart with nothing to warn about it.
+import type { TrackReport, TrackedSample } from './track.ts';
 import { pathAt } from './path-morph.ts';
-import { type Frame, type Mat, type NodePose, type Pose, REST, apply, evaluate, frameAt } from './timeline.ts';
+import { type Frame, type Mat, type NodePose, type Pose, REST, apply, evaluate, frameAt, netPose } from './timeline.ts';
 
 function attrs(a: Record<string, string | number>): string {
   return Object.entries(a)
@@ -159,6 +163,33 @@ export function definitionsSvg(ch: Character, indent = '  ', context = renderCon
   return `${indent}<defs>\n${body.join('\n')}\n${indent}</defs>`;
 }
 
+/**
+ * Namespaces every SVG id in one fragment, so several drawings can share a document.
+ *
+ * A variants sheet holds N builds of one factory, and each build emits the *same*
+ * author-written ids — `id="aperture"`, `url(#skyGradient)`. Concatenated, every
+ * reference in the document resolves to the first definition, so a sheet varying a
+ * clip radius silently draws cell 0's artwork in all N cells. Verified: two builds
+ * whose clip radii were 10 and 45 both emitted `id="aperture"`.
+ *
+ * Done as a pass over the serialised fragment rather than by threading a prefix
+ * through the emitters, because a paint reference is baked into a shape's own
+ * `fill` attribute at scene-build time (`scene.ts` writes `url(#name)` there) and
+ * `shapeSvg` never sees a render context. A pass over the text reaches every id by
+ * construction; threading would reach only the sites someone remembered. Nothing
+ * else in Heron's output contains `id="`, `url(#` or `href="#`, and a colour like
+ * `fill="#e03131"` matches none of the three.
+ *
+ * Class names are deliberately left alone: they carry no cross-references in a
+ * static sheet, and keeping them means a cell's part is still greppable by path.
+ */
+export function prefixIds(svg: string, prefix: string): string {
+  if (!prefix) return svg;
+  // Every form inserts the prefix immediately after a fixed opener, so the id
+  // itself never needs capturing.
+  return svg.replace(/\bid="|\bhref="#|url\(#/g, (opener) => opener + prefix);
+}
+
 /** Clip geometry has no rig or animation semantics, so emit only its ink. */
 function definitionShapes(node: Node, indent: string): string {
   return node.content.map((item) =>
@@ -213,6 +244,29 @@ export type Paint = (shape: ShapeSpec) => ShapeSpec;
  * CSS animate each one independently, and drawing the static pose the same way
  * keeps a snapshot structurally identical to the thing it is a snapshot of.
  */
+export interface NodeSvgOptions {
+  /**
+   * Draw the whole subtree at this fraction of its opacity, folded into each
+   * shape rather than set on the groups.
+   *
+   * Group opacity is not a free choice of spelling. A `<g opacity>` makes a
+   * renderer composite that group through an offscreen layer sized by its
+   * bounds, and when a crop excludes the group those bounds are empty: resvg
+   * unwraps the zero-size rect and aborts the process, which no JavaScript
+   * `catch` can intercept. Folding the same factor into the shapes needs no
+   * layer. It is not pixel-identical where faint shapes overlap, which is why
+   * it is opt-in and used for ghosts rather than for the real drawing.
+   */
+  fade?: number;
+  /**
+   * Skip any subtree whose world bounds fall outside this view.
+   *
+   * Off-frame artwork cannot be seen and costs bytes, and emitting it is what
+   * gives a renderer empty bounds to compute in the first place.
+   */
+  cull?: { view: ViewBox; corners: Map<string, Vec2[]>; matrices: Map<string, Mat> };
+}
+
 export function nodeSvg(
   node: Node,
   pose: Pose,
@@ -220,22 +274,50 @@ export function nodeSvg(
   paint?: Paint,
   context?: RenderContext,
   time = 0,
+  o: NodeSvgOptions = {},
+  carried = 1,
 ): string {
   const layers = pose.get(node.path) ?? [];
+
+  if (o.cull) {
+    const box = boxOfCorners(o.cull.corners.get(node.path), o.cull.matrices.get(node.path));
+    const [vx, vy, vw, vh] = o.cull.view;
+    if (box && (box.x1 < vx || box.y1 < vy || box.x0 > vx + vw || box.y0 > vy + vh)) return '';
+  }
+
+  // Folded opacity accumulates down the tree, because that is what the nested
+  // groups would otherwise have multiplied for us.
+  const faded = o.fade !== undefined;
+  const own = faded ? layers.reduce((n, p) => n * p.opacity, 1) : 1;
+  const alpha = carried * own;
+  if (faded && alpha * o.fade! < 0.02) return '';
+
   const depth = indent + '  '.repeat(Math.max(0, node.tracks.length - 1));
-  let out = node.content
+  const shapeOf = (shape: ShapeSpec): string => {
+    const painted = paint ? paint(shape) : shape;
+    if (!faded) {
+      if (paint) return shapeSvg(painted, time);
+      const use = context?.uses.get(shape);
+      return use
+        ? `<use href="#${use.id}" x="${round(use.x)}" y="${round(use.y)}"/>`
+        : shapeSvg(shape, time, context?.morphClasses.get(shape));
+    }
+    const attrs = { ...painted.attrs };
+    const was = typeof attrs.opacity === 'number' ? attrs.opacity : 1;
+    attrs.opacity = round(was * alpha * o.fade!, 3);
+    return shapeSvg({ tag: painted.tag, attrs, morph: painted.morph }, time);
+  };
+
+  const out = node.content
     .map((item) => ('shape' in item
-      ? depth + '  ' + (() => {
-          if (paint) return shapeSvg(paint(item.shape), time);
-          const use = context?.uses.get(item.shape);
-          return use
-            ? `<use href="#${use.id}" x="${round(use.x)}" y="${round(use.y)}"/>`
-            : shapeSvg(item.shape, time, context?.morphClasses.get(item.shape));
-        })()
-      : nodeSvg(item.node, pose, depth + '  ', paint, context, time)))
+      ? depth + '  ' + shapeOf(item.shape)
+      : nodeSvg(item.node, pose, depth + '  ', paint, context, time, o, alpha)))
+    .filter(Boolean)
     .join('\n');
+  if (!out) return '';
 
   // Innermost layer first, wrapping outward, so layer 0 ends up on the outside.
+  let wrapped = out;
   for (let i = Math.max(0, node.tracks.length - 1); i >= 0; i--) {
     const p = layers[i] ?? REST;
     const pad = indent + '  '.repeat(i);
@@ -245,7 +327,7 @@ export function nodeSvg(
     if (i === 0 && node.clip) a.push(`clip-path="url(#${node.clip})"`);
     if (i === 0 && node.mask) a.push(`mask="url(#${node.mask})"`);
     if (t) a.push(`transform="${t}"`);
-    if (p.opacity !== 1) a.push(`opacity="${round(p.opacity)}"`);
+    if (!faded && p.opacity !== 1) a.push(`opacity="${round(p.opacity)}"`);
     // A dash pattern as long as the longest stroke under here, which both the
     // shapes and the compiled animation inherit. Written once, as an attribute,
     // so the snapshot and the stylesheet cannot disagree about the length.
@@ -254,9 +336,9 @@ export function nodeSvg(
       a.push(`stroke-dasharray="${round(dash, 2)}"`);
       if (p.draw !== 1) a.push(`stroke-dashoffset="${dashOffset(p.draw, dash)}"`);
     }
-    out = `${pad}<g${a.length ? ' ' + a.join(' ') : ''}>\n${out}\n${pad}</g>`;
+    wrapped = `${pad}<g${a.length ? ' ' + a.join(' ') : ''}>\n${wrapped}\n${pad}</g>`;
   }
-  return out;
+  return wrapped;
 }
 
 /** Layer 0 keeps the bare name, so a part with one layer looks like it always did. */
@@ -324,35 +406,89 @@ export function renderStatic(ch: Character, t: number, opts: RenderOptions = {})
  * layout would be two instruments that could drift apart while appearing to
  * agree, which is the one thing a comparison tool must not do.
  */
+export interface Cell {
+  label: string;
+  body: string;
+  /**
+   * Coloured swatches appended to the label, for a cell holding several tracked
+   * parts. Drawn in the label band rather than in the body: the body is a nested
+   * `<svg>` scaled to the scene's viewBox, so text inside it would be sized in
+   * scene units and illegible on anything but a small drawing.
+   */
+  legend?: Array<{ colour: string; text: string }>;
+  /**
+   * A plot drawn beneath the artwork in a unit box, with the aspect ratio free.
+   * Emitters write 0..1 coordinates, the same convention `studio` plots channels in.
+   */
+  chart?: string;
+}
+
+export interface TileOptions {
+  context?: RenderContext;
+  /** Crop shared by every cell. Defaults to the scene's own viewBox. */
+  viewBox?: ViewBox;
+  /** Height in pixels of the per-cell plot band. */
+  chartHeight?: number;
+  /**
+   * Definitions block, when the cells are not all one character's.
+   *
+   * A variants sheet has N characters with N sets of resources, so the sheet's
+   * `<defs>` cannot be derived from any single one of them.
+   */
+  defs?: string;
+}
+
+/**
+ * The grid every sheet is drawn on.
+ *
+ * There are several of them — poses over time, shapes one at a time, trajectories,
+ * variants — and they are read side by side, so the chrome has to stay identical.
+ * Copies of this layout would be instruments that could drift apart while
+ * appearing to agree, which is the one thing a comparison tool must not do.
+ */
 function tile(
   ch: Character,
-  cells: { label: string; body: string }[],
+  cells: Cell[],
   cols: number,
   cellWidth: number,
-  context = renderContext(ch),
+  o: TileOptions = {},
 ): string {
-  const [vx, vy, vw, vh] = ch.viewBox;
+  const [vx, vy, vw, vh] = o.viewBox ?? ch.viewBox;
+  const chart = o.chartHeight ?? 0;
   const rows = Math.ceil(cells.length / cols);
-  const chh = round((cellWidth * vh) / vw);
+  // Whole pixels. A sheet is a raster people look at, and a sub-pixel canvas
+  // height buys nothing while giving the rasteriser a fractional pixmap to
+  // reconcile with an integer one.
+  const chh = Math.round((cellWidth * vh) / vw);
   const pad = SHEET_PAD;
   const W = sheetWidth(cols, cellWidth);
-  const H = rows * (chh + SHEET_LABEL) + pad * (rows + 1);
+  const cellHeight = chh + chart + SHEET_LABEL;
+  const H = rows * cellHeight + pad * (rows + 1);
 
   const drawn = cells.map((cell, i) => {
     const cx = pad + (i % cols) * (cellWidth + pad);
-    const cy = pad + Math.floor(i / cols) * (chh + SHEET_LABEL + pad);
+    const cy = pad + Math.floor(i / cols) * (cellHeight + pad);
+    const legend = (cell.legend ?? [])
+      .map((l) => ` <tspan fill="${l.colour}">${l.text}</tspan>`)
+      .join('');
+    const plot = cell.chart
+      ? `\n    <svg x="${cx}" y="${cy + chh}" width="${cellWidth}" height="${chart}" viewBox="0 0 1 1" preserveAspectRatio="none">\n${cell.chart}\n    </svg>`
+      : '';
     return `  <g>
-    <rect x="${cx}" y="${cy}" width="${cellWidth}" height="${chh + SHEET_LABEL}" fill="#ffffff" stroke="#dfe4e8"/>
-    <text x="${cx + 6}" y="${cy + chh + 14}" font-family="ui-monospace,monospace" font-size="11" fill="#68757f">${cell.label}</text>
+    <rect x="${cx}" y="${cy}" width="${cellWidth}" height="${cellHeight}" fill="#ffffff" stroke="#dfe4e8"/>
+    <text x="${cx + 6}" y="${cy + chh + chart + 14}" font-family="ui-monospace,monospace" font-size="11" fill="#68757f">${cell.label}${legend}</text>
     <svg x="${cx}" y="${cy}" width="${cellWidth}" height="${chh}" viewBox="${vx} ${vy} ${vw} ${vh}">
 ${cell.body}
-    </svg>
+    </svg>${plot}
   </g>`;
   });
 
   return block(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
-    definitionsSvg(ch, '  ', context),
+    // Built only when it will be used: a variants sheet supplies its own defs,
+    // and scanning `ch` for reusable shapes to then discard the result costs a
+    // full walk of the rig (7.4ms cold on the film's 939 shapes).
+    o.defs ?? definitionsSvg(ch, '  ', o.context ?? renderContext(ch)),
     `  <rect width="${W}" height="${H}" fill="#eef1f3"/>`,
     drawn.join('\n'),
     '</svg>',
@@ -375,7 +511,7 @@ export function renderSheet(
       ? onionSvg(ch, times, i, opts.onion, context)
       : nodeSvg(ch.root, evaluate(ch, t), '      ', undefined, context, t),
   }));
-  return tile(ch, cells, opts.cols ?? Math.min(4, times.length), opts.cellWidth ?? SHEET_CELL, context);
+  return tile(ch, cells, opts.cols ?? Math.min(4, times.length), opts.cellWidth ?? SHEET_CELL, { context });
 }
 
 export interface CueFrame {
@@ -454,7 +590,7 @@ export function renderCueSheet(
     label: `${frame.cue} ${Math.round(frame.progress * 100)}% · ${frame.seconds.toFixed(2)}s`,
     body: nodeSvg(ch.root, evaluate(ch, frame.time), '      ', undefined, context, frame.time),
   }));
-  return tile(ch, cells, o.cols ?? Math.min(4, frames.length), o.cellWidth ?? SHEET_CELL, context);
+  return tile(ch, cells, o.cols ?? Math.min(4, frames.length), o.cellWidth ?? SHEET_CELL, { context });
 }
 
 const TRAIL = '#3ba064';
@@ -478,10 +614,13 @@ function onionSvg(
   const out: string[] = [];
   for (let back = Math.min(depth, index); back > 0; back--) {
     const t = times[index - back];
-    const fade = round(0.32 * (1 - (back - 1) / Math.max(1, depth)), 3);
-    out.push(`      <g opacity="${fade}">`);
-    out.push(nodeSvg(ch.root, evaluate(ch, t), '        ', (s) => repaint(s, TRAIL), undefined, t));
-    out.push('      </g>');
+    const strength = round(0.32 * (1 - (back - 1) / Math.max(1, depth)), 3);
+    // Folded into the shapes rather than set on a wrapping group, for the reason
+    // `NodeSvgOptions.fade` documents: a `<g opacity>` whose bounds fall outside
+    // the view is an offscreen layer of zero area, and resvg aborts on it.
+    out.push(nodeSvg(ch.root, evaluate(ch, t), '      ', (s) => repaint(s, TRAIL), undefined, t, {
+      fade: strength,
+    }));
   }
   out.push(nodeSvg(ch.root, evaluate(ch, times[index]), '      ', undefined, context, times[index]));
   return out.join('\n');
@@ -535,6 +674,364 @@ export function renderShapeSheet(ch: Character, opts: { cols?: number; cellWidth
     body: nodeSvg(ch.root, pose, '      ', (s) => repaint(s, s === ref.shape ? PICK : GHOST), undefined, 0),
   }));
   return tile(ch, cells, opts.cols ?? Math.min(5, Math.max(1, shapes.length)), opts.cellWidth ?? SHEET_CELL);
+}
+
+// --- motion sheets -----------------------------------------------------------
+
+/**
+ * Hues for tracked parts. Distinct in hue rather than in lightness, because
+ * lightness is spent on time direction within each path.
+ */
+export const TRACK_HUES = ['#2f7fd0', '#c2571f', '#3ba064', '#8a52c4', '#b8a02a'];
+
+/** A part that is only measured against, not asked about. */
+const COMPARE = '#8b98a3';
+
+/**
+ * How a tracked report becomes drawable series: colour, short label, samples.
+ *
+ * Shared by the motion sheet and the variants overlay because the two are meant
+ * to be read against each other. Left duplicated, a change like "do not spend a
+ * hue on a compare part" would silently give the same part different colours in
+ * the two sheets, and a legend swatch would stop naming the path it belongs to —
+ * the drift `tile`'s own docstring calls the one thing a comparison tool may not
+ * do.
+ */
+function trackSeries(parts: PartTrack[], samplesOf: (p: PartTrack, i: number) => TrackedSample[]):
+Array<{ compare: boolean; colour: string; label: string; samples: TrackedSample[] }> {
+  return parts.map((p, i) => ({
+    compare: p.role === 'compare',
+    colour: p.role === 'compare' ? COMPARE : TRACK_HUES[i % TRACK_HUES.length],
+    label: p.part.split('.').pop() ?? p.part,
+    samples: samplesOf(p, i),
+  }));
+}
+
+/** Motion cells hold a path, not a thumbnail, so they are wider than a pose cell. */
+export const MOTION_CELL = 420;
+
+/**
+ * Pale-to-saturated along one hue, so a path reads forwards without an arrow.
+ *
+ * The pale end stops well short of white: a first dot mixed 70% into white is
+ * invisible against light artwork, which loses the one end of the path a reader
+ * needs in order to know which way time runs.
+ */
+function tintAt(colour: string, u: number): string {
+  const mix = 0.5 - 0.5 * u;
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(colour.slice(i, i + 2), 16));
+  const to = (v: number) => Math.round(v + (255 - v) * mix).toString(16).padStart(2, '0');
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
+/**
+ * The path, the spacing dots and the end markers for one cell.
+ *
+ * Shared by the motion sheet and the variants overlay rather than written twice.
+ * The whole point of drawing a trajectory into a variants cell is that it can be
+ * compared with the one in the motion sheet, and two emitters that agree today are
+ * two that can disagree tomorrow.
+ *
+ * Sizes are scaled from `unit`, one crop unit in cell pixels, so marks keep a
+ * constant apparent size whether the cell holds a whole stage or one bird's head.
+ */
+function trajectorySvg(
+  series: Array<{ compare: boolean; colour: string; samples: TrackedSample[] }>,
+  o: { unit: number; indent: string },
+): string[] {
+  const { unit, indent } = o;
+  const r = 2.6 * unit;
+  const out: string[] = [];
+  const at = (s: TrackedSample): string => `${round(s.point[0], 2)},${round(s.point[1], 2)}`;
+
+  for (const { compare, colour, samples } of series) {
+    if (compare) {
+      // Drawn, but quietly: it is the thing a clearance is measured *from*, so
+      // it has to be visible without competing with the subject.
+      const pts = samples.filter((s) => s.visible).map(at).join(' ');
+      if (pts) {
+        out.push(`${indent}<polyline points="${pts}" fill="none" stroke="${colour}" stroke-width="${round(1 * unit, 2)}" stroke-dasharray="${round(5 * unit, 2)} ${round(4 * unit, 2)}" opacity="0.7"/>`);
+      }
+      continue;
+    }
+    // One polyline per visible run. A single line through a hide/show gap would
+    // draw a chord across the frame that nobody ever saw.
+    let run: TrackedSample[] = [];
+    const flush = (): void => {
+      if (run.length > 1) {
+        out.push(`${indent}<polyline points="${run.map(at).join(' ')}" fill="none" stroke="${colour}" stroke-width="${round(1.4 * unit, 2)}" stroke-linejoin="round" opacity="0.9"/>`);
+      }
+      run = [];
+    };
+    for (const s of samples) {
+      if (s.visible) run.push(s);
+      else flush();
+    }
+    flush();
+
+    samples.forEach((s, i) => {
+      const u = samples.length > 1 ? i / (samples.length - 1) : 1;
+      const size = s.boundary || s.planted ? r * 1.9 : r;
+      const [x, y] = [round(s.point[0], 2), round(s.point[1], 2)];
+      out.push(s.visible
+        ? `${indent}<circle cx="${x}" cy="${y}" r="${round(size, 2)}" fill="${tintAt(colour, u)}"/>`
+        : `${indent}<circle cx="${x}" cy="${y}" r="${round(size, 2)}" fill="none" stroke="${colour}" stroke-width="${round(0.7 * unit, 2)}" opacity="0.5"/>`);
+    });
+
+    const last = samples[samples.length - 1];
+    if (last) {
+      out.push(`${indent}<circle cx="${round(last.point[0], 2)}" cy="${round(last.point[1], 2)}" r="${round(r * 2.4, 2)}" fill="none" stroke="${colour}" stroke-width="${round(1.2 * unit, 2)}"/>`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Where a part went, and how fast, drawn over the drawing it belongs to.
+ *
+ * The spacing of the dots is the reading: bunched is slow, spread is fast. That
+ * is the chart animators have drawn for a century, and it says in one glance what
+ * a channel plot cannot say at all — a channel knows what a joint did, not where
+ * the ink travelled or whether the arc bent.
+ *
+ * Sizes are computed from the crop factor rather than left to
+ * `vector-effect="non-scaling-stroke"`: the sheet has to rasterise identically
+ * through resvg and through a browser, and arithmetic done here cannot depend on
+ * a renderer implementing a feature.
+ */
+export function renderMotionSheet(
+  ch: Character,
+  report: TrackReport,
+  o: {
+    cols?: number;
+    cellWidth?: number;
+    /** Shared crop for every cell, so trajectories stay comparable. */
+    viewBox?: ViewBox;
+    perCue?: boolean;
+  } = {},
+): string {
+  // No reuse context. Ghost cells fold opacity into every shape, so no two are
+  // byte-identical and nothing can be shared — scanning for reuse only serialises
+  // symbols that never get referenced (55 definitions and 0 `<use>` on the film,
+  // 8 KB that resvg then parses for nothing). Real definitions still come from
+  // `ch.definitions`, so clips, masks and gradients are unaffected.
+  const context: RenderContext = { uses: new Map(), symbols: [], morphClasses: new Map() };
+  const view = o.viewBox ?? ch.viewBox;
+  const cellWidth = o.cellWidth ?? MOTION_CELL;
+  // One unit of the crop in cell pixels, so marks keep a constant apparent size
+  // whether the cell shows a whole stage or one bird's head.
+  const unit = view[2] / cellWidth;
+  // Culling only matters once the view is narrower than the scene, and the corners
+  // depend on the rig alone, so this is per command rather than per cell.
+  const corners = o.viewBox ? subtreeCorners(ch) : undefined;
+
+  // Samples grouped once. Deriving each cue's subset with a fresh `.filter` at
+  // every use is how two of them come to disagree about what a cell contains.
+  const columns = report.parts.map((p) => (o.perCue
+    ? p.samples.reduce((m, s) => {
+        const key = s.cue ?? '';
+        (m.get(key) ?? m.set(key, []).get(key)!).push(s);
+        return m;
+      }, new Map<string, TrackedSample[]>())
+    : new Map([['', p.samples]])));
+  const groups = [...columns[0].keys()];
+
+  const cells: Cell[] = groups.map((cue) => {
+    const at = columns[0].get(cue) ?? [];
+    const mid = at[Math.floor(at.length / 2)]?.t ?? 0;
+    const ghostTimes = [mid];
+
+    // Faded in its own colours rather than repainted to one grey: a scene with a
+    // background — a stage, a night sky, a field — flattens into an opaque block
+    // under a repaint, hiding the very characters the path belongs to.
+    const layers: string[] = ghostTimes
+      .map((t) => {
+        const frame = frameAt(ch, t);
+        return nodeSvg(ch.root, frame.pose, '        ', undefined, context, t, {
+          fade: 0.3,
+          ...(corners ? { cull: { view, corners, matrices: frame.matrices } } : {}),
+        });
+      })
+      .filter(Boolean);
+
+    const series = trackSeries(report.parts, (_p, i) => columns[i].get(cue) ?? []);
+    layers.push(...trajectorySvg(series, { unit, indent: '        ' }));
+
+    return {
+      label: cue ? `${cue}  ${at.length} samples` : `${at.length} samples`,
+      body: layers.join('\n'),
+      legend: series.map((v) => ({ colour: v.colour, text: v.label })),
+      chart: speedChart(series.map((v) => ({
+        samples: v.samples, colour: v.colour, skip: v.compare,
+      }))),
+    };
+  });
+
+  return tile(ch, cells, o.cols ?? Math.min(3, cells.length), cellWidth, {
+    context,
+    viewBox: view,
+    chartHeight: 54,
+  });
+}
+
+// --- variant sheets ----------------------------------------------------------
+
+export interface VariantCell {
+  label: string;
+  /** This cell's own build. Every cell is a separate Character. */
+  ch: Character;
+  /** Cycle times drawn left to right inside the cell. One time is a pose. */
+  times: number[];
+  /** Trajectories to draw over the artwork, when a part was tracked. */
+  track?: TrackReport;
+}
+
+/**
+ * One cell per parameter combination, so a choice of constants can be *seen*.
+ *
+ * The cells share a crop and a scale, always. Letting each build frame itself
+ * would draw the same motion at different sizes and destroy the only thing a
+ * side-by-side sheet is for. A build that declares a different viewBox is
+ * therefore reported by the caller rather than quietly rescaled into the first
+ * build's box, because a rescaled cell is a lie about amplitude.
+ *
+ * Each build's ids are namespaced (see `prefixIds`); without that, N builds of one
+ * factory collide on every author-written id and the sheet shows cell 0's clip,
+ * mask and gradient in every cell.
+ */
+export function renderVariantSheet(
+  cells: VariantCell[],
+  o: { cols?: number; cellWidth?: number; viewBox?: ViewBox } = {},
+): string {
+  if (!cells.length) throw new Error('heron: a variant sheet needs at least one build');
+  const base = cells[0].ch;
+  const [vx, vy, vw, vh] = o.viewBox ?? base.viewBox;
+  // A strip lays its frames out along the cell, so the cell's box is that many
+  // scenes wide and `tile` derives the shorter cell height from it — and the cell
+  // has to widen by the same factor, or every frame renders at a fraction of a
+  // thumbnail. Both facts live here so a direct caller gets them too.
+  const frames = Math.max(1, ...cells.map((c) => c.times.length));
+  const cellWidth = o.cellWidth ?? (cells.some((c) => c.track) ? MOTION_CELL : SHEET_CELL) * frames;
+  const view: ViewBox = [vx, vy, vw * frames, vh];
+  const unit = view[2] / cellWidth;
+
+  const defs: string[] = [];
+  const drawn = cells.map((cell, i) => {
+    // Per cell, not per document: this is what keeps the builds independent.
+    const prefix = `v${i}-`;
+    const context = renderContext(cell.ch);
+    const own = definitionsSvg(cell.ch, '  ', context);
+    if (own) defs.push(prefixIds(own, prefix));
+
+    const series = cell.track ? trackSeries(cell.track.parts, (p) => p.samples) : [];
+    // The trajectory goes into every strip frame — each frame is its own little
+    // stage, and a path drawn in only one would read as belonging to that moment
+    // rather than to the whole window — but it is the same markup every time, so
+    // it is built once rather than per frame.
+    const paths = series.length ? trajectorySvg(series, { unit, indent: '        ' }) : [];
+
+    return {
+      label: cell.label,
+      body: cell.times.flatMap((t, k) => {
+        const art = prefixIds(
+          nodeSvg(cell.ch.root, evaluate(cell.ch, t), '        ', undefined, context, t),
+          prefix,
+        );
+        const inner = [art, ...paths].filter(Boolean).join('\n');
+        return inner
+          ? [`      <g transform="translate(${round(vw * k, 2)} 0)">\n${inner}\n      </g>`]
+          : [];
+      }).join('\n'),
+      legend: series.map((v) => ({ colour: v.colour, text: v.label })),
+    };
+  });
+
+  return tile(base, drawn, o.cols ?? Math.min(3, cells.length), cellWidth, {
+    viewBox: view,
+    defs: defs.join('\n'),
+  });
+}
+
+/**
+ * A crop that frames everything a report tracked, at the scene's aspect ratio.
+ *
+ * A crop that stretched one axis would draw a circular arc as an ellipse, which
+ * is exactly the judgement a motion sheet exists to support — so the shorter side
+ * is grown rather than the longer one squeezed. Lives here, beside the other
+ * framing helpers, so a test can reach it and so a variant overlay can share it.
+ */
+export function zoomBox(
+  ch: Character,
+  reports: TrackReport[],
+  pad = 0.12,
+): ViewBox | undefined {
+  // A list, because a variants sheet crops N builds and the crop has to contain
+  // every one of them. A box fitted to the first build would push the widest
+  // build's motion off the edge of its own cell.
+  const box = reports
+    .flatMap((r) => r.parts)
+    .reduce<Box | null>((acc, p) => mergeBoxes(acc, p.bounds), null);
+  if (!box) return undefined;
+  const margin = Math.max(box.x1 - box.x0, box.y1 - box.y0) * pad + 1;
+  let w = box.x1 - box.x0 + margin * 2;
+  let h = box.y1 - box.y0 + margin * 2;
+  const aspect = ch.viewBox[2] / ch.viewBox[3];
+  if (w / h > aspect) h = w / aspect; else w = h * aspect;
+  w = Math.min(w, ch.viewBox[2]);
+  h = Math.min(h, ch.viewBox[3]);
+  const cx = (box.x0 + box.x1) / 2;
+  const cy = (box.y0 + box.y1) / 2;
+  const x0 = Math.min(Math.max(ch.viewBox[0], cx - w / 2), ch.viewBox[0] + ch.viewBox[2] - w);
+  const y0 = Math.min(Math.max(ch.viewBox[1], cy - h / 2), ch.viewBox[1] + ch.viewBox[3] - h);
+  return [round(x0, 2), round(y0, 2), round(w, 2), round(h, 2)];
+}
+
+/**
+ * A series in a unit box, drawn the way `studio` plots channels.
+ *
+ * Stroke widths are in unit-box coordinates rather than
+ * `vector-effect="non-scaling-stroke"`, for the same reason the marks above are
+ * sized from the crop: the sheet has to rasterise identically through resvg and
+ * a browser, so nothing here may depend on a renderer implementing a feature.
+ */
+function unitPlot(values: number[], o: {
+  colour: string; width: number; base?: number; scale?: number; dash?: string; opacity?: number;
+}): string {
+  if (values.length < 2) return '';
+  const base = o.base ?? 1;
+  const scale = o.scale ?? 0.92;
+  const points = values
+    .map((v, i) => `${round(i / (values.length - 1), 4)},${round(base - scale * v, 4)}`)
+    .join(' ');
+  const extra = (o.dash ? ` stroke-dasharray="${o.dash}"` : '')
+    + (o.opacity !== undefined ? ` opacity="${o.opacity}"` : '');
+  return `      <polyline points="${points}" fill="none" stroke="${o.colour}" stroke-width="${o.width}"${extra}/>`;
+}
+
+/** Speed and acceleration in a unit box, normalised per cell. */
+function speedChart(series: Array<{ samples: TrackedSample[]; colour: string; skip: boolean }>): string {
+  const out: string[] = [
+    '      <rect width="1" height="1" fill="#fafbfc"/>',
+    '      <line x1="0" y1="0.5" x2="1" y2="0.5" stroke="#e4e8eb" stroke-width="0.004"/>',
+  ];
+  for (const { samples, colour, skip } of series) {
+    if (skip || samples.length < 3) continue;
+    const speeds: number[] = [];
+    for (let i = 1; i < samples.length; i++) {
+      const a = samples[i - 1].point;
+      const b = samples[i].point;
+      speeds.push(samples[i].visible && samples[i - 1].visible ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 0);
+    }
+    const peak = Math.max(...speeds, 1e-9);
+    out.push(unitPlot(speeds.map((v) => v / peak), { colour, width: 0.008 }));
+
+    const accel = speeds.slice(1).map((v, i) => v - speeds[i]);
+    const aPeak = Math.max(...accel.map(Math.abs), 1e-9);
+    out.push(unitPlot(accel.map((v) => v / aPeak), {
+      colour, width: 0.004, base: 0.5, scale: 0.42, dash: '0.02 0.014', opacity: 0.45,
+    }));
+  }
+  return out.filter(Boolean).join('\n');
 }
 
 // --- bounding boxes ----------------------------------------------------------
@@ -951,6 +1448,38 @@ export function localCorners(ch: Character): Map<string, Vec2[]> {
     }
     if (pts.length) out.set(node.path, pts);
   }
+  return out;
+}
+
+/**
+ * Local corners of every part's shapes *including its descendants'*, keyed by path.
+ *
+ * `localCorners` deliberately reports a part's own ink, which is what picking one
+ * shape out of a drawing needs. Following a part's motion needs the opposite: a
+ * pure transform group — a shot, a travelling wrapper — owns no shapes at all and
+ * would have no entry, so anything asking "where is this part" would get nothing
+ * and fall back to the viewBox origin.
+ *
+ * No matrix work is involved. Shape coordinates are authored in scene space and a
+ * pivot is only a rotation origin in that same space, so a subtree's local box is
+ * a plain union of its descendants'.
+ */
+export function subtreeCorners(ch: Character): Map<string, Vec2[]> {
+  const own = localCorners(ch);
+  const out = new Map<string, Vec2[]>();
+  const walk = (node: Node): Vec2[] => {
+    const pts = [...(own.get(node.path) ?? [])];
+    for (const item of node.content) if ('node' in item) pts.push(...walk(item.node));
+    // Only the extremes survive, so a deep rig does not carry every leaf's corners
+    // up through every ancestor.
+    if (pts.length) {
+      const b = hull(pts.flat());
+      out.set(node.path, boxCorners(b));
+      return boxCorners(b);
+    }
+    return pts;
+  };
+  walk(ch.root);
   return out;
 }
 

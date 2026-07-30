@@ -10,6 +10,7 @@ import { type Character, CHANNELS } from './scene.ts';
 import { type Frame, evaluate, netPose, sampleFrames } from './timeline.ts';
 import { EPSILON } from './compile.ts';
 import { frameBox, localCorners } from './render.ts';
+import { CONTACT_BAND, longestRun } from './track.ts';
 
 export interface Finding {
   rule: string;
@@ -24,16 +25,9 @@ const SAMPLES = 60;
 /** Speed variation permitted while planted before it reads as skating. */
 const SLIP_THRESHOLD = 0.25;
 
-/**
- * How close to its own lowest point a contact must be to count as planted,
- * as a fraction of the character's height.
- *
- * Measured against the point's own lowest reach rather than the declared ground
- * line, because a foot passing *above* the ground on its way through a swing is
- * airborne, not in contact — a symmetric test around the ground line quietly
- * classifies a hovering foot as planted and then judges its speed.
- */
-const CONTACT_BAND = 0.02;
+// The contact band and the longest-run scan are shared with the measurement
+// layer, so the two cannot drift apart on the details of what "planted" means.
+// The stance decision itself is still made twice; see `track.ts`'s header.
 
 export function lint(ch: Character): Finding[] {
   // One pass of frames feeds every rule. Posing the scene per rule, per part,
@@ -198,21 +192,7 @@ function groundChecks(ch: Character, frames: Frame[]): Finding[] {
     const travel = low.reduce((a, b) => a + b, 0) <= 0 ? -1 : 1;
     const planted = pts.map((p, i) => p.y >= deepest.y - band && dx[i] * travel >= 0);
 
-    // Longest circular run, tracked by start and length so the growing run is
-    // not copied on every extension.
-    let bestStart = 0;
-    let bestLen = 0;
-    let runStart = 0;
-    let runLen = 0;
-    for (let i = 0; i < SAMPLES * 2 && runLen < SAMPLES; i++) {
-      const k = i % SAMPLES;
-      if (planted[k]) {
-        if (runLen === 0) runStart = i;
-        runLen++;
-        if (runLen > bestLen) { bestLen = runLen; bestStart = runStart; }
-      } else runLen = 0;
-    }
-    const best = Array.from({ length: bestLen }, (_, i) => (bestStart + i) % SAMPLES);
+    const best = longestRun(planted);
 
     // Drop the samples at each end of the run: they straddle touchdown and
     // push-off, where the foot is genuinely accelerating onto or off the

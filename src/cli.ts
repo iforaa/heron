@@ -12,6 +12,8 @@
  *   sheet     several poses tiled, which is how motion is judged
  *   studio    the built animation with a scrubber, which is how timing is judged
  *   inspect   the same pose as numbers, when geometry is the question
+ *   motion    where one part went and how fast, which is how spacing is judged
+ *   variants  the same scene under several parameters, so constants are chosen
  *   lint      defects that are invisible in a still frame
  *   build     the deliverable, plus a report of anything that was approximated
  *
@@ -20,16 +22,23 @@
  * 17-20% stroke-width error through a whole scene without anyone noticing.
  */
 
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { basename, dirname, relative, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { writeFileSync, readFileSync, mkdirSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Resvg } from '@resvg/resvg-js';
 
 import { Character } from './scene.ts';
 import {
-  renderStatic, renderSheet, renderCueSheet, renderShapeSheet, listShapes, boxOfCorners,
-  localCorners, cueFrames, sheetTimes, sheetWidth,
+  renderStatic, renderSheet, renderCueSheet, renderShapeSheet, renderMotionSheet,
+  renderVariantSheet, listShapes,
+  boxOfCorners, localCorners, cueFrames, sheetTimes, sheetWidth, zoomBox, MOTION_CELL, SHEET_CELL,
+  type VariantCell,
 } from './render.ts';
+import { VariantSet } from './variants.ts';
+import {
+  type TrackWindow, formatTrackReport, partLine, resolveWindow, trackParts, windowTimes,
+} from './track.ts';
 import { compile } from './compile.ts';
 import { lint, formatFindings } from './lint.ts';
 import { studio } from './studio.ts';
@@ -46,15 +55,37 @@ interface Args {
   [k: string]: string | boolean | string[];
 }
 
+/**
+ * Flags that mean something repeated, and the only ones that accumulate.
+ *
+ * Repeatability is a property of the flag, not of the parser. Accumulating
+ * everything was tried and was worse than the problem it fixed: `num()` returns
+ * its default for an array and `String()` comma-joins one, so `-t 0.2 -t 0.6`
+ * silently rendered t=0, `-o a.svg -o b.svg` wrote a file called `a.svg,b.svg`,
+ * and a repeated `--cue` silently widened the window to the whole cycle. Every
+ * other flag keeps last-wins, which is at least predictable.
+ */
+const REPEATABLE = new Set(['part', 'compare', 'motion', 'only']);
+
 function parseArgs(argv: string[]): Args {
   const out: Args = { _: [] };
+  const set = (k: string, v: string | boolean): void => {
+    const prev = out[k];
+    if (prev === undefined || !REPEATABLE.has(k)) out[k] = v;
+    else out[k] = [...(Array.isArray(prev) ? prev : [String(prev)]), String(v)];
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--')) {
-      const [k, v] = a.slice(2).split('=');
-      out[k] = v ?? (argv[i + 1] && !argv[i + 1].startsWith('-') ? argv[++i] : true);
+      // Split at the *first* `=` only: `--only neck=9` is a flag whose value
+      // legitimately contains one, and `split('=')` threw the value away.
+      const eq = a.indexOf('=');
+      const k = eq < 0 ? a.slice(2) : a.slice(2, eq);
+      set(k, eq < 0
+        ? (argv[i + 1] && !argv[i + 1].startsWith('-') ? argv[++i] : true)
+        : a.slice(eq + 1));
     } else if (a.startsWith('-') && a.length === 2) {
-      out[a.slice(1)] = argv[i + 1] && !argv[i + 1].startsWith('-') ? argv[++i] : true;
+      set(a.slice(1), argv[i + 1] && !argv[i + 1].startsWith('-') ? argv[++i] : true);
     } else {
       (out._ as string[]).push(a);
     }
@@ -72,13 +103,68 @@ function pick<T>(mod: Record<string, unknown>, kind: new (...a: never[]) => T): 
   return Object.values(mod).find((v) => v instanceof kind) as T | undefined;
 }
 
+/**
+ * The one scene every other command works on.
+ *
+ * A variants module exports a factory rather than a finished Character, so
+ * `pick(mod, Character)` finds nothing there and `sheet`, `build`, `lint`, `video`
+ * and `motion` would all fail on it. The base combination — the first value of
+ * every axis — is the canonical scene, so those commands keep working and mean
+ * something definite while the grid is being explored.
+ */
+function resolveCharacter(mod: Record<string, unknown>, file: string): Character {
+  const direct = pick(mod, Character);
+  if (direct) return direct;
+  const set = pick(mod, VariantSet);
+  if (set) return set.build(set.base);
+  throw new Error(`heron: ${file} does not export a Character or a variant grid`);
+}
+
 function write(file: string, data: string | Uint8Array): void {
   mkdirSync(dirname(resolve(file)), { recursive: true });
   writeFileSync(resolve(file), data);
 }
 
+/**
+ * Rasterises out of process, because resvg can abort rather than throw.
+ *
+ * It is a Rust library reached through native bindings, and some geometry — a
+ * stroked multi-subpath under heavy magnification is one case — makes it panic on
+ * an empty bounds computation. A panic is not catchable from JavaScript: it takes
+ * the whole process down, so an in-process call would let one awkward shape
+ * destroy a command that had already done all of its real work. Isolating it
+ * turns that into an error we can report and recover from.
+ */
 function toPng(svg: string, width: number): Buffer {
-  return new Resvg(svg, { fitTo: { mode: 'width', value: width }, background: 'white' }).render().asPng();
+  const script = `
+    const { readFileSync, writeFileSync } = require('node:fs');
+    const { Resvg } = require('@resvg/resvg-js');
+    const svg = readFileSync(process.argv[1], 'utf8');
+    const png = new Resvg(svg, {
+      fitTo: { mode: 'width', value: Number(process.argv[3]) }, background: 'white',
+    }).render().asPng();
+    writeFileSync(process.argv[2], png);
+  `;
+  const dir = mkdtempSync(join(tmpdir(), 'heron-png-'));
+  const svgFile = join(dir, 'in.svg');
+  const pngFile = join(dir, 'out.png');
+  try {
+    writeFileSync(svgFile, svg);
+    const run = spawnSync(process.execPath, ['-e', script, svgFile, pngFile, String(width)], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      maxBuffer: 1 << 24,
+    });
+    if (run.status !== 0 || !existsSync(pngFile)) {
+      const why = String(run.stderr ?? '').trim().split('\n').slice(0, 2).join(' ');
+      throw new Error(
+        `heron: the rasteriser could not draw this image${why ? ` (${why})` : ''}.`
+        + ' Pass --svg to write the vector instead, which is always exact.',
+      );
+    }
+    return readFileSync(pngFile);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -92,6 +178,34 @@ function emit(svg: string, args: Args, stem: string, width: number): string {
   const out = String(args.o ?? `${stem}.${args.svg ? 'svg' : 'png'}`);
   write(out, args.svg ? svg : toPng(svg, width));
   return out;
+}
+
+/**
+ * A repeatable, comma-separated flag as a list.
+ *
+ * Comma separates entries, but `head@188,30` contains a comma of its own, so an
+ * `@x,y` tail is matched as one token before any splitting happens.
+ */
+const TOKEN = /[^,\s]+@-?[\d.]+,-?[\d.]+|[^,\s]+/g;
+function argList(v: unknown): string[] {
+  return (Array.isArray(v) ? v : v === undefined || v === true ? [] : [String(v)])
+    .flatMap((s) => String(s).match(TOKEN) ?? []);
+}
+
+/**
+ * The slice of the animation a command was pointed at.
+ *
+ * `--cue landing` names a cue; `--range 1.2..2.4` is seconds; a bare `--range
+ * landing` is still read as a cue, which is how `motion` shipped. Shared so the
+ * two commands cannot come to disagree about what a range is.
+ */
+function windowArg(args: Args): TrackWindow | undefined {
+  if (typeof args.cue === 'string') return { kind: 'cue', name: args.cue };
+  if (typeof args.range !== 'string') return undefined;
+  const span = args.range.split('..');
+  return span.length === 2
+    ? { kind: 'seconds', from: Number(span[0]), to: Number(span[1]) }
+    : { kind: 'cue', name: args.range };
 }
 
 function num(v: unknown, d: number): number {
@@ -109,6 +223,11 @@ const USAGE = `heron - compile character animation into a self-contained animate
   heron snapshot <scene.ts> [-t 0.4] [-o frame.png] [-w 520] [--svg]
   heron shapes   <scene.ts> [-o shapes.png] [--cols 5] [--svg]
   heron sheet    <scene.ts> [-n 8] [-o sheet.png] [--cols 4] [--onion 3] [--cues] [--svg]
+  heron motion   <scene.ts> --part <path[@x,y]> [--part ...] [--compare <path>] [-n 24]
+                 [--range <cue>|<a..b>] [--cues] [--zoom] [-o motion.png] [--svg] [--no-json]
+  heron variants <scene.ts> [-t 0.5] [--strip 3] [--cue <name>] [--range <a..b>]
+                 [--motion <path>] [--compare <path>] [--zoom] [--only axis=value] [--cols 3]
+                 [-o variants.png] [--svg] [--no-json]
   heron inspect  <scene.ts> [-t 0.4]
   heron lint     <scene.ts>
   heron studio   <scene.ts> [-o scene.html] [-w 900]
@@ -199,8 +318,7 @@ async function main(): Promise<void> {
   }
 
   const mod = await loadScene(file);
-  const ch = pick(mod, Character);
-  if (!ch) throw new Error(`heron: ${file} does not export a Character`);
+  const ch = resolveCharacter(mod, file);
 
   if (cmd === 'match') {
     const reference = (args._ as string[])[2];
@@ -241,15 +359,17 @@ async function main(): Promise<void> {
     }
 
     case 'sheet': {
-      const cues = pick(mod, CueSheet);
+      const timeline = pick(mod, CueSheet) ?? pick(mod, Score);
       if (args.cues) {
-        if (!cues) throw new Error(`heron: ${file} must export a CueSheet to use sheet --cues`);
+        if (!timeline) {
+          throw new Error(`heron: ${file} must export a Score or CueSheet to use sheet --cues`);
+        }
         const names = typeof args.cues === 'string' ? args.cues.split(',') : undefined;
         const samples = Math.max(1, num(args.n, 3));
-        const frames = cueFrames(cues, { samples, cues: names });
+        const frames = cueFrames(timeline, { samples, cues: names });
         const cols = num(args.cols, Math.min(4, frames.length));
         const out = emit(
-          renderCueSheet(ch, cues, { cols, samples, cues: names }),
+          renderCueSheet(ch, timeline, { cols, samples, cues: names }),
           args, 'cues', sheetWidth(cols),
         );
         console.log(`${out}  (${frames.length} cue frames across ${new Set(frames.map((f) => f.cue)).size} cues)`);
@@ -262,6 +382,157 @@ async function main(): Promise<void> {
       const out = emit(renderSheet(ch, times, { cols, onion }), args, 'sheet', sheetWidth(cols));
       console.log(`${out}  (${times.length} frames: ${times.map((t) => t.toFixed(2)).join(' ')})`);
       if (onion) console.log(`  each cell trails the ${onion} frames before it, so arcs and direction read`);
+      break;
+    }
+
+    case 'motion': {
+      const parts = argList(args.part);
+      if (!parts.length) throw new Error('heron: motion needs at least one --part <path[@x,y]>');
+      const timeline = pick(mod, CueSheet) ?? pick(mod, Score);
+      const window = windowArg(args);
+
+      const report = trackParts(ch, {
+        parts,
+        compare: argList(args.compare),
+        samples: Math.max(2, num(args.n, 24)),
+        window,
+        timeline,
+        perCue: Boolean(args.cues),
+      });
+
+      // One crop shared by every cell: per-cell crops would draw the same
+      // trajectory at different scales and destroy the side-by-side reading.
+      const viewBox = args.zoom ? zoomBox(ch, [report]) : undefined;
+
+      const cols = num(args.cols, Math.min(3, args.cues ? (timeline?.windows.length ?? 1) : 1));
+      const svg = renderMotionSheet(ch, report, {
+        cols, viewBox, perCue: Boolean(args.cues),
+      });
+      const out = emit(svg, args, 'motion', sheetWidth(cols, MOTION_CELL));
+      let json = '';
+      if (!args['no-json']) {
+        json = out.replace(/\.(png|svg)$/, '') + '.json';
+        write(json, JSON.stringify(report, null, 2));
+      }
+      console.log(`${out}${json ? `  ${json}` : ''}  ${report.parts.length} part(s), ${report.samples} samples`);
+      console.log(formatTrackReport(report));
+      break;
+    }
+
+    case 'variants': {
+      const set = pick(mod, VariantSet);
+      if (!set) {
+        throw new Error(
+          `heron: ${file} does not declare a variant grid. Bind the scene factory to`
+          + ' the numbers it varies:\n'
+          + "  export const takes = grid((p) => build(p), { ride: [8, 14, 20] });",
+        );
+      }
+
+      const combos = set.plan(argList(args.only));
+
+      // A fresh Character per cell. Re-animating one would stack layers, because
+      // `PartHandle.animate` pushes a new layer on every call. The base is the
+      // exception: `resolveCharacter` already built it above, so building it a
+      // second time is a whole rig and gait solved for nothing.
+      const builds = combos.map((params) => ({
+        params, ch: params.index === 0 ? ch : set.build(params),
+      }));
+      const base = builds[0].ch;
+      const odd = builds.filter((b) => String(b.ch.viewBox) !== String(base.viewBox));
+      if (odd.length) {
+        // Reported, never rescaled: a cell drawn to a different scale is a lie
+        // about amplitude, which is usually the thing being compared.
+        console.log(
+          `  ${odd.length} build(s) declare a different viewBox and are drawn in the first`
+          + ` build's box [${base.viewBox.join(' ')}] — ${odd[0].params.label} is [${odd[0].ch.viewBox.join(' ')}]`,
+        );
+      }
+
+      const timeline = pick(mod, CueSheet) ?? pick(mod, Score);
+      const window = windowArg(args);
+      const span = resolveWindow(base, window ?? { kind: 'cycle' }, timeline);
+      const strip = Math.max(1, num(args.strip, 1));
+      // A strip borrows the sampler's endpoint rule rather than re-deriving it,
+      // so a looping cycle does not put the same pose in the first and last
+      // frame. A single cell is `-t`: progress *through the window*, so it keeps
+      // meaning the midpoint of whatever was selected rather than an absolute
+      // cycle time that could fall outside a chosen cue.
+      const times = strip > 1
+        ? windowTimes(base, window ?? { kind: 'cycle' }, strip, timeline).times
+        : [span.from + (span.to - span.from) * num(args.t, 0.5)];
+
+      const tracked = argList(args.motion);
+      const tracks = tracked.length
+        ? builds.map((b) => trackParts(b.ch, {
+            parts: tracked,
+            compare: argList(args.compare),
+            samples: Math.max(2, num(args.n, 24)),
+            window,
+            timeline,
+          }))
+        : undefined;
+
+      // Labelled by position in the whole grid, not in the filtered subset, so a
+      // `--only` sheet and its sidecar name the same cell the same way.
+      const cells: VariantCell[] = builds.map((b, i) => ({
+        label: `#${b.params.index}  ${b.params.label}`,
+        ch: b.ch,
+        times,
+        track: tracks?.[i],
+      }));
+      const cols = num(args.cols, Math.max(1, Math.min(set.columns, cells.length)));
+      const cellWidth = (tracks ? MOTION_CELL : SHEET_CELL) * strip;
+      // One crop over every build, so the widest build's motion is not pushed off
+      // the edge of its own cell by a box fitted to the first one.
+      const viewBox = args.zoom && tracks ? zoomBox(base, tracks) : undefined;
+      const svg = renderVariantSheet(cells, { cols, cellWidth, viewBox });
+      const out = emit(svg, args, 'variants', sheetWidth(cols, cellWidth));
+
+      let json = '';
+      if (!args['no-json']) {
+        json = out.replace(/\.(png|svg)$/, '') + '.json';
+        write(json, JSON.stringify({
+          scene: base.name,
+          axes: set.axes,
+          window: span,
+          times,
+          cells: builds.map((b, i) => {
+            const { index, label, seed, ...values } = b.params;
+            return {
+              index,
+              label,
+              seed,
+              values,
+              // Stats without the sample grid. Every cell carrying its own samples
+              // would make the sidecar unreadable at the size that matters, and
+              // the per-sample detail is what `heron motion` is for.
+              track: tracks?.[i]?.parts.map(({ samples, ...rest }) => rest),
+            };
+          }),
+        }, null, 2));
+      }
+
+      console.log(
+        `${out}${json ? `  ${json}` : ''}  ${builds.length} build(s), ${set.describe()}`
+        + (strip > 1 ? `, ${strip} frames each` : ''),
+      );
+      // One lookup per build, read by both the table and the extremes below.
+      const lead = tracks?.map((r) => r.parts.find((p) => p.role === 'tracked'));
+      for (const [i, b] of builds.entries()) {
+        const stats = lead?.[i] ? `  ${partLine(lead[i]!)}` : '';
+        console.log(`  #${b.params.index}  ${b.params.label}${stats}`);
+      }
+      if (lead) {
+        const paths = lead.map((p) => p?.pathLength ?? 0);
+        const most = paths.indexOf(Math.max(...paths));
+        const least = paths.indexOf(Math.min(...paths));
+        console.log(
+          `  widest travel #${builds[most].params.index} (${paths[most]}),`
+          + ` tightest #${builds[least].params.index} (${paths[least]})`,
+        );
+      }
+      console.log('  pick the cell that reads best; the sidecar has the numbers behind it');
       break;
     }
 
@@ -353,6 +624,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: Error) => {
-  console.error(err.message);
+  console.error(process.env.HERON_TRACE ? err.stack : err.message);
   process.exitCode = 1;
 });

@@ -15,16 +15,7 @@
 
 import { type Channel, type Character, type Vec2, sampled } from './scene.ts';
 import { frameAt } from './timeline.ts';
-
-/** Deterministic 0..1 stream from an integer seed. */
-function seeded(seed: number): () => number {
-  let a = (seed | 0) + 0x6d2b79f5;
-  return () => {
-    a = Math.imul(a ^ (a >>> 15), a | 1);
-    a ^= a + Math.imul(a ^ (a >>> 7), a | 61);
-    return ((a ^ (a >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { seeded } from './random.ts';
 
 export interface NoiseOptions {
   /** Wobbles per cycle in the slowest band. Whole numbers only — see below. */

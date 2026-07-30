@@ -22,6 +22,7 @@
  */
 
 import type { Vec2 } from './scene.ts';
+import { seeded } from './random.ts';
 
 export interface Move {
   /** Where this instance has to travel, relative to where it was drawn. */
@@ -84,12 +85,7 @@ export function morph(from: Vec2[], to: Vec2[]): Move[] {
  * project meaningless.
  */
 export function shuffle(n: number, seed = 1): number[] {
-  let a = (seed | 0) + 0x6d2b79f5;
-  const next = () => {
-    a = Math.imul(a ^ (a >>> 15), a | 1);
-    a ^= a + Math.imul(a ^ (a >>> 7), a | 61);
-    return ((a ^ (a >>> 14)) >>> 0) / 4294967296;
-  };
+  const next = seeded(seed);
   const out = Array.from({ length: n }, (_, i) => i);
   for (let i = n - 1; i > 0; i--) {
     const j = Math.floor(next() * (i + 1));

@@ -32,6 +32,8 @@ with joints, and the CLI lets the agent look at what it made.
 ```bash
 heron shapes crane.ts -o shapes.png      # one cell per run, to see which ink is which part
 heron sheet crane.ts -n 8 -o sheet.png   # eight poses tiled, as one image
+heron motion crane.ts --part legNear.foot # where one part went and how fast
+heron variants takes.ts --motion head    # the same scene under several parameters
 heron inspect crane.ts -t 0.3            # the same pose as numbers
 heron lint crane.ts                      # defects invisible in a still frame
 heron build crane.ts -o crane.svg        # the deliverable
@@ -43,6 +45,18 @@ heron video film.ts -o film.mp4 --fps 30 # optional raster delivery through ffmp
 A single screenshot cannot tell you whether a walk works, because motion is a
 relationship between frames. `sheet` is the command that makes an agent able to
 judge its own animation.
+
+`motion` goes one level further: it follows a single part and draws where it went,
+one dot per sample, because the *spacing* of those dots is how animators have read
+timing for a century. On the reference walk the planted foot holds a dead-constant
+3.0 units per sample and then travels 5.4x faster through the swing — that contrast
+is the walk, and a ratio near 1.0 is a foot skating.
+
+`variants` answers the other kind of question. When a number has no right answer —
+how far a neck swings, how high a hop goes — it renders the whole grid of candidates
+in one image, with the trajectory drawn in every cell, so the number gets *chosen*
+instead of guessed. Every run also writes a JSON sidecar, so a grid can be ranked
+numerically as well as looked at.
 
 `lint` catches what neither stills nor sheets show. These are not style rules;
 each one was written because it caught a real defect while building the

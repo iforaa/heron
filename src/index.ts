@@ -87,6 +87,7 @@ export type {
 } from './font.ts';
 
 export { noise, aim } from './motion.ts';
+export { seeded } from './random.ts';
 export type { NoiseOptions, AimOptions } from './motion.ts';
 
 export {
@@ -97,10 +98,24 @@ export type { Pose, NodePose, Frame, Mat, TrackSnapshot } from './timeline.ts';
 
 export {
   cssClass, definitionsSvg, renderContext, renderStatic, renderSheet, renderCueSheet, renderShapeSheet,
-  listShapes, partBox, sceneBox, cueFrames, sheetTimes, sheetWidth, pathLength, strokeLength,
+  renderMotionSheet, renderVariantSheet, prefixIds,
+  listShapes, partBox, sceneBox, subtreeCorners, localCorners, boxOfCorners,
+  mergeBoxes, cueFrames, sheetTimes, sheetWidth, pathLength, strokeLength, zoomBox,
+  TRACK_HUES, MOTION_CELL, SHEET_CELL,
 } from './render.ts';
-export type { ShapeRef } from './render.ts';
+export type { ShapeRef, NodeSvgOptions, VariantCell } from './render.ts';
 export type { Box, RenderOptions, CueFrame, CueSheetRenderOptions } from './render.ts';
+
+export {
+  trackParts, resolvePart, resolveWindow, windowTimes, formatTrackReport, partLine,
+  boxGap, longestRun, CONTACT_BAND,
+} from './track.ts';
+export { grid, VariantSet, MAX_BUILDS } from './variants.ts';
+export type { Axes, AxisValues, Variant, VariantMeta } from './variants.ts';
+export type {
+  TrackWindow, TrackRequest, TrackedSample, TrackOptions, TrackReport, PartTrack,
+  Hold, Deceleration, Clearance,
+} from './track.ts';
 export { compile, keyframeName, EPSILON } from './compile.ts';
 export type { CompileReport, CompileOptions } from './compile.ts';
 

@@ -19,7 +19,11 @@ GEOMETRY   heron trace icon.png -o scene.ts   ->  heron match scene.ts icon.png
 ANATOMY    heron shapes scene.ts  ->  group the strokes into jointed parts  ->  heron match again
               which run is which        this part is judgement, not pixels     the rest pose must not drift
 
-MOTION     animate  ->  heron sheet scene.ts  ->  look  ->  heron lint  ->  fix
+MOTION     animate  ->  heron sheet scene.ts  ->  heron motion --part x  ->  heron lint  ->  fix
+              is the pose right?         is the *timing* right?      what a still hides
+
+CHOICE     heron variants scene.ts --motion x  ->  pick the cell that reads best
+              when a number has no right answer, do not invent one
 ```
 
 Never ship a scene you have not looked at, matched and linted.
@@ -475,6 +479,8 @@ Other options worth knowing when a gait misbehaves:
 heron shapes scene.ts -o shapes.png       # one cell per run - which ink is which part
 heron sheet scene.ts -n 8 -o sheet.png     # eight poses tiled - the default check
 heron sheet film.ts --cues -n 3 -o cues.png # start/middle/end of every exported cue
+heron motion scene.ts --part legNear.foot   # one part's arc and spacing, plus a JSON report
+heron variants scene.ts --motion head       # the same scene under several parameters
 heron snapshot scene.ts -t 0.62 -o f.png   # one pose, e.g. the push-off frame
 heron inspect scene.ts -t 0.3              # the same pose as numbers
 heron match scene.ts icon.png              # the rest pose against the reference
@@ -487,6 +493,101 @@ heron video film.ts -o film.mp4 --fps 30 --audio mix.wav
 single screenshot cannot tell you whether a walk works. `inspect` is better than
 an image when the question is geometric ("is the foot actually reaching the
 ground?") — it prints world coordinates, contact points and bounding boxes.
+
+### Spacing is how timing is read
+
+`heron motion` follows one part and draws where it went, with a dot per sample.
+The *gaps between the dots* are the reading, and they are the chart animators have
+drawn for a century: bunched dots are slow, spread dots are fast.
+
+```
+heron motion examples/crane.ts --part legNear.foot -n 24
+  path 112.12   speed 65.57/s median, 354.51/s peak, 5.41x   reversals 2x/8y
+```
+
+That 5.4x is the walk. The foot holds a dead-constant speed while planted — the
+treadmill belt the ground contact demands — and then travels five times faster
+through the swing. A gait whose ratio is near 1.0 is a foot sliding at one speed
+for the whole cycle, which reads as skating no matter how correct the poses are.
+
+Track a point that is neither a joint nor a contact with `part@x,y`:
+
+```
+heron motion examples/crane.ts --part head@188,30
+```
+
+That is the beak tip, and it is the example to reach for first, because the
+defect that motivated this instrument was a chick's beak folding over its own
+back twice per step. It is invisible in every still frame and unmissable as a
+loop in the trajectory.
+
+Useful flags: `--cues` gives one cell per shot, `--compare other.part` measures
+ink-to-ink clearance between two parts (does the hop actually clear the beak?),
+`--zoom` crops to the action, and `-n` sets the sample count — raise it for long
+films, since the default 24 is tuned to a one-second cycle.
+
+Every run also writes a JSON sidecar. Read the image when the question is "does
+this read"; read the JSON when it is "how much" — it carries path length, speeds
+in units per second, holds, direction reversals, decelerations and clearances.
+Speeds are per second deliberately, so two runs at different `-n` stay comparable.
+
+Two honest limits. A hollow dot means the part is **faded out** — `clip`, `mask`
+and `offstage` hide artwork without touching opacity, so it is not a claim that
+nothing was seen. And the instrument only reports: it sets no thresholds and never
+fails a build. `lint` is the only judge.
+
+### Choose constants, do not invent them
+
+Some numbers have no right answer. How far a neck swings as a bird walks, how high
+a hop goes, how long a follow-through lags — these are chosen because the result
+reads well, and no amount of reasoning gets there. Guessing one, rendering it once
+and accepting it is the single most common way a generated scene ends up merely
+adequate.
+
+Make the scene a function of those numbers and declare the values worth trying:
+
+```ts
+const AXES = { neck: [6, 9, 13], head: [-8, -11, -15] };
+
+function take(p: Variant<typeof AXES>): Character {
+  const ch = craneAlone(`crane-${p.index}`, 1.1);
+  ch.part('body.neck').animate(sway(p.neck, { stance: STANCE }));
+  return ch;
+}
+
+export const takes = grid(take, AXES);
+```
+
+Then look at all of them at once, with the trajectory drawn in every cell:
+
+```
+heron variants examples/crane-takes.ts --motion body.neck.head@260,64 --zoom
+  #0  neck=6  head=-8    path 107.4  med  84.3/s  peak 153.1/s
+  #6  neck=13 head=-8    path 329.9  med 257.3/s  peak 461.9/s
+  widest travel #6 (329.9), tightest #0 (107.4)
+```
+
+Three times the beak travel across the grid, and the interaction is visible too:
+#3 travels *further* than #4 even though its head swings less, because the neck and
+head fight each other. That is why both belong in the grid — varying one alone finds
+a threshold that moves as soon as the other changes.
+
+Notes that matter:
+
+- Every cell builds a **fresh** Character, and gets a stable `p.seed` so any `noise`
+  or `shuffle` is reproducible per cell rather than reshuffling between renders.
+- Other commands keep working on a grid module: `sheet`, `build`, `lint` and `video`
+  all use the **base** build, the first value of every axis.
+- The cells share one crop and one scale, always. A cell rescaled to fit itself
+  would be a lie about amplitude, which is usually the thing being compared.
+- `--strip 3` puts three moments in each cell when the question is timing rather
+  than pose; `--cue landing` or `--range 1.2..2.4` narrows the window; `--only
+  neck=9` slices a grid too large to draw. More than 25 builds is refused, not
+  sampled — a biased subsample is worse than no comparison.
+- The sidecar carries every cell's parameters, seed and motion stats, so the grid
+  can be **ranked numerically** and not only eyeballed.
+
+Then write the chosen number into the scene with a comment saying what it beat.
 
 ## 5. Fix what lint reports
 
