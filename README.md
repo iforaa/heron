@@ -35,6 +35,7 @@ heron sheet crane.ts -n 8 -o sheet.png   # eight poses tiled, as one image
 heron inspect crane.ts -t 0.3            # the same pose as numbers
 heron lint crane.ts                      # defects invisible in a still frame
 heron build crane.ts -o crane.svg        # the deliverable
+heron video film.ts -o film.mp4 --fps 30 # optional raster delivery through ffmpeg
 ```
 
 <img src="docs/walk-sheet.png" width="620" alt="Contact sheet of eight poses through the walk cycle">
@@ -96,13 +97,148 @@ A pivot is the joint's coordinate in the rest pose, written in the same space as
 the artwork — which is exactly what `transform-origin` needs, at every depth of
 the rig.
 
+## Reaching with two-bone IK
+
+Arms and legs can be aimed from the point that matters — where the hand or foot
+should land — instead of guessing two joint rotations:
+
+```ts
+import { keys, solveTwoBone } from '@heron/core';
+
+const pose = solveTwoBone({
+  root: [100, 80],
+  target: [155, 205],
+  lengths: [72, 66],
+  bend: -1, // a downward limb bends toward screen-right
+});
+
+figure.part('arm.upper').animate({ rotate: keys([[0, pose.upper], [1, pose.upper]]) });
+figure.part('arm.lower').animate({ rotate: keys([[0, pose.lower], [1, pose.lower]]) });
+```
+
+The returned angles follow Heron's rig conventions: degrees from a positive-Y
+rest pose, with the lower rotation local to the upper part. Targets outside the
+limb's reachable range are clamped, and `pose.status` reports `too-close` or
+`too-far` rather than silently stretching the bones.
+
+For moving targets, `reach()` evaluates the rig in world space and layers the
+solved joint motion over animation already on the character:
+
+```ts
+reach(figure, {
+  upper: 'arm.upper',
+  lower: 'arm.lower',
+  target: { part: 'target' }, // or (t) => [x, y]
+  bend: 1,
+});
+```
+
+## Choreographing a film
+
+`score()` names sequential acting beats. `cueSheet()` names overlapping film
+windows in seconds, then places locally authored channels inside them:
+
+```ts
+const film = cueSheet(scene, {
+  performance: [0, 2.9],
+  wipe: [2.7, 4.0],
+  signal: [3.9, 7.2],
+});
+
+scene.part('wipe').animate({
+  scaleX: film.place('wipe', keys([[0, 0], [1, 10]])),
+  scaleY: film.place('wipe', keys([[0, 0], [1, 10]])),
+});
+
+scene.field('dots').morphThrough([
+  { at: 0, points: waveform, opacity: 0 },
+  { at: 0.2, points: waveform, opacity: 1, stagger: 0.08 },
+  { at: 0.6, points: burst },
+  { at: 1, points: logo },
+], { window: film.at('signal') });
+```
+
+`strokeText()` draws deterministic uppercase vector lettering that can use the
+same `draw`, transform and opacity channels as any other part. Custom stroke
+fonts are plain geometry created with `strokeFont()`, so typography remains
+self-contained rather than depending on fonts installed on the viewer's device.
+
+For a real brand typeface, `loadOutlineFont()` and `outlineText()` convert a
+TTF/OTF/WOFF into ordinary filled path geometry at authoring time. The font file
+is not referenced by the output:
+
+```ts
+const brand = loadOutlineFont('./assets/Brand-Regular.otf');
+outlineText('NEXA AI', {
+  font: brand, x: 640, y: 560, size: 72, align: 'center', fill: '#fff',
+});
+```
+
+## Film graphics
+
+Paint resources, clips, masks and compatible path morphs stay inside the same
+static/evaluator/compiler pipeline:
+
+```ts
+const glow = radialGradient('glow', {
+  stops: [
+    { at: 0, color: '#72e7ff', opacity: 0.9 },
+    { at: 1, color: '#1688ff', opacity: 0 },
+  ],
+});
+const aperture = clipPath('aperture', () =>
+  circle({ cx: 640, cy: 360, r: 220, fill: '#fff' }));
+
+part('signal', { clip: aperture }, () => {
+  circle({ cx: 640, cy: 360, r: 300, fill: glow });
+  path({ d: pathMorph([
+    [0, 'M420 360 C520 220 760 220 860 360 C760 500 520 500 420 360 Z'],
+    [1, 'M470 250 C650 190 830 330 760 500 C580 550 400 420 470 250 Z'],
+  ]), fill: '#fff' });
+});
+```
+
+`mask()` uses painted luminance or alpha instead of binary clipping. Repeated
+translated field/type primitives are automatically serialized as SVG
+definitions and `<use>` instances; the authored scene stays expanded and
+addressable.
+
+For review, export a `CueSheet` and run:
+
+```bash
+heron sheet film.ts --cues -n 3 -o cues.png
+heron sheet film.ts --cues=runner,wipe -n 4 -o transition.png
+```
+
+Each frame is labelled with cue-local progress and absolute seconds. Overlapping
+cues deliberately retain both labels.
+
+## Interchange and video
+
+`serializeScene()` produces a versioned JSON-safe scene IR. Authored keys,
+resources, rigs and path morphs remain structural; procedural closures are
+explicitly sampled because JavaScript functions are not serializable.
+
+```ts
+const json = serializeScene(scene, { samples: 256 });
+const restored = parseScene(json);
+```
+
+SVG remains the primary deliverable. When a commercial also needs raster media,
+the optional ffmpeg adapter evaluates exact Heron frames and can mux a
+soundtrack:
+
+```bash
+heron video film.ts -o film.mp4 -w 1920 --fps 30 --audio soundtrack.wav
+```
+
 ## What you can trust
 
 The evaluator (what `snapshot` shows you) and the compiled stylesheet (what the
 browser plays) must agree, or the feedback loop is lying. So the animatable
 channels are deliberately only what CSS can express — `rotate`, `x`, `y`,
-`scaleX`, `scaleY`, `opacity` — and easing is restricted to CSS-expressible
-curves.
+`scaleX`, `scaleY`, `opacity`, `draw` — and keyed compatible path geometry can
+animate through CSS `d`. Easing is restricted to CSS-expressible curves.
 
 Measured on the crane: the contact point of the foot, sampled in Node and then
 measured again in a browser playing the compiled file, diverges by at most
@@ -115,9 +251,9 @@ parts were baked. Nothing is silently degraded.
 
 ## Not in scope
 
-No video pipeline, no Lottie export, no preview studio, no interactivity
-runtime, no 3D. The output is a plain SVG file, which is the point: if this
-project is abandoned tomorrow, every file it ever produced keeps working.
+No Lottie export, interactivity runtime, simulation-heavy 3D, or bundled physics
+engine. SVG is still the durable primary output; video is an optional edge
+adapter, not a runtime dependency of the scene.
 
 ## Status
 

@@ -3,12 +3,21 @@
   "version": "0.1.0",
   "description": "Compile character animation code into a self-contained animated SVG. Built for agents.",
   "type": "module",
-  "bin": { "heron": "./src/cli.ts" },
-  "exports": { ".": "./src/index.ts" },
+  "bin": {
+    "heron": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "test": "node --test test/*.test.ts",
-    "crane": "node src/cli.ts build examples/crane.ts -o out/crane.svg"
+    "crane": "node src/cli.ts build examples/crane.ts -o out/crane.svg",
+    "stairs": "node src/cli.ts build examples/crane-stairs.ts -o out/crane-stairs.svg -w 1400",
+    "family": "node src/cli.ts build examples/crane-family.ts -o out/crane-family.svg -w 1500"
   },
   "license": "MIT",
-  "dependencies": { "@resvg/resvg-js": "^2.6.2" }
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "opentype.js": "^2.0.0"
+  }
 }

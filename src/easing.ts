@@ -108,3 +108,32 @@ export const push: Easing = cubicBezier(0.5, 0, 0.7, 1);
 
 /** Swing: accelerates away and decelerates in. A limb travelling through air. */
 export const swing: Easing = cubicBezier(0.3, 0, 0.5, 1);
+
+const KEYWORDS: Record<string, Easing> = {
+  linear, ease, 'ease-in': easeIn, 'ease-out': easeOut, 'ease-in-out': easeInOut,
+};
+
+/**
+ * Parsing is pure — one serialization is one curve — so results are memoized.
+ * A scene IR carries thousands of keys naming the same few easings, and sharing
+ * the curve objects also lets the compiler compare them by identity-derived key
+ * without rebuilding a bezier solver per key.
+ */
+const PARSED = new Map<string, Easing>();
+
+/** Reconstructs one of Heron's CSS-expressible easings from its serialization. */
+export function parseEasing(css: string): Easing {
+  const keyword = KEYWORDS[css];
+  if (keyword) return keyword;
+  const memo = PARSED.get(css);
+  if (memo) return memo;
+  const parsed = (() => {
+    const bezier = /^cubic-bezier\(\s*([-+.\deE]+)\s*,\s*([-+.\deE]+)\s*,\s*([-+.\deE]+)\s*,\s*([-+.\deE]+)\s*\)$/.exec(css);
+    if (bezier) return cubicBezier(...bezier.slice(1).map(Number) as [number, number, number, number]);
+    const stepped = /^steps\(\s*(\d+)\s*,\s*(start|end)\s*\)$/.exec(css);
+    if (stepped) return steps(Number(stepped[1]), stepped[2] as 'start' | 'end');
+    throw new Error(`heron: unsupported easing serialization "${css}"`);
+  })();
+  PARSED.set(css, parsed);
+  return parsed;
+}

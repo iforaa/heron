@@ -14,7 +14,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  character, part, circle, keys, sampled, compile, trackAt, EPSILON,
+  character, part, circle, line, keys, sampled, compile, trackAt, keyframeName, strokeLength, EPSILON,
+  type ChannelName,
   cubicBezier, ease, easeIn, easeOut, easeInOut, linear, glide,
   type Character, type Easing,
 } from '../src/index.ts';
@@ -62,6 +63,11 @@ function parseKeyframes(svg: string): Map<string, Keyframe[]> {
       const op = body.match(/opacity:\s*([-\d.]+);/);
       if (op) vals.opacity = +op[1];
 
+      // `draw` is emitted as the offset still to be revealed, in user units, so
+      // it has to be read back through the same dash length to be compared.
+      const dash = body.match(/stroke-dashoffset:\s*([-\d.]+);/);
+      if (dash) vals.dashoffset = +dash[1];
+
       const timing = body.match(/animation-timing-function:\s*([^;]+);/);
       frames.push({ p: +f[1] / 100, vals, ease: parseEasing(timing?.[1]?.trim()) });
     }
@@ -84,35 +90,43 @@ function playAt(frames: Keyframe[], t: number, channel: string): number | undefi
   return a.vals[channel] + (b.vals[channel] - a.vals[channel]) * a.ease.fn(p);
 }
 
-function checkScene(ch: Character, label: string): void {
+function checkScene(ch: Character, label: string, least = 500): void {
   const { svg } = compile(ch);
   const blocks = parseKeyframes(svg);
   let checked = 0;
 
   for (const node of ch.nodes()) {
-    if (!node.track) continue;
-    const base = `kf-${node.path.replace(/\./g, '-')}`;
-    // Phase becomes animation-delay, which shifts time rather than changing the
-    // keyframes, so it is compared out here and covered by its own test.
-    const unphased = { ...node.track, phase: undefined };
+    // Every layer is its own element with its own keyframes, so parity has to
+    // hold layer by layer — checking only their net effect would let two of them
+    // be wrong in opposite directions and still pass.
+    node.tracks.forEach((track, layer) => {
+      // Phase becomes animation-delay, which shifts time rather than changing the
+      // keyframes, so it is compared out here and covered by its own test.
+      const unphased = { ...track, phase: undefined };
+      const dashLen = strokeLength(node);
 
-    for (let i = 0; i <= 120; i++) {
-      const t = i / 120;
-      const expected = trackAt(unphased, t);
-      for (const [channel, want] of Object.entries(expected)) {
-        const frames = blocks.get(channel === 'opacity' ? `${base}-o` : base) ?? blocks.get(base);
-        const got = frames && playAt(frames, t, channel);
-        if (got === undefined) continue;
-        const tol = EPSILON[channel as keyof typeof EPSILON] ?? 0.01;
-        assert.ok(
-          Math.abs(got - want) <= tol,
-          `${label} ${node.path}.${channel} at t=${t.toFixed(3)}: browser would play ${got.toFixed(4)}, evaluator says ${want.toFixed(4)} (tolerance ${tol})`,
-        );
-        checked++;
+      for (let i = 0; i <= 120; i++) {
+        const t = i / 120;
+        const expected = trackAt(unphased, t);
+        for (const [channel, want] of Object.entries(expected)) {
+          // Which block a channel lands in is the compiler's rule, so it is asked
+          // rather than restated: a fourth property group must not quietly make
+          // this harness check fewer channels.
+          const frames = blocks.get(keyframeName(node.path, layer, channel as ChannelName));
+          const raw = frames && playAt(frames, t, channel === 'draw' ? 'dashoffset' : channel);
+          const got = channel === 'draw' && raw !== undefined ? 1 - raw / dashLen : raw;
+          if (got === undefined) continue;
+          const tol = EPSILON[channel as keyof typeof EPSILON] ?? 0.01;
+          assert.ok(
+            Math.abs(got - want) <= tol,
+            `${label} ${node.path}#${layer}.${channel} at t=${t.toFixed(3)}: browser would play ${got.toFixed(4)}, evaluator says ${want.toFixed(4)} (tolerance ${tol})`,
+          );
+          checked++;
+        }
       }
-    }
+    });
   }
-  assert.ok(checked > 500, `${label}: expected a substantial number of comparisons, made ${checked}`);
+  assert.ok(checked > least, `${label}: expected a substantial number of comparisons, made ${checked}`);
 }
 
 test('crane: compiled CSS plays what the evaluator computed', () => {
@@ -163,6 +177,14 @@ test('every channel survives the round trip, including baked and mixed parts', (
   );
 
   checkScene(scene, 'mixed');
+});
+
+test('a drawn-on stroke plays back as the evaluator computed it', () => {
+  const scene = character('draw', { viewBox: [0, 0, 200, 60], duration: 2 }, () => {
+    part('word', () => line({ from: [10, 30], to: [190, 30], stroke: '#000', width: 8 }));
+  });
+  scene.part('word').animate({ draw: keys([[0, 0], [0.6, 1], [1, 0]]) });
+  checkScene(scene, 'draw', 100);
 });
 
 test('a hand-written cubic-bezier equal to a keyword curve does not force a bake', () => {

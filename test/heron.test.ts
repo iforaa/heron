@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   character, part, limb, ellipse, circle, path, keys, sampled,
-  compile, evaluate, pointAt, lint, renderStatic, renderShapeSheet, listShapes,
+  compile, evaluate, netPose, pointAt, frameAt, lint, renderStatic, renderShapeSheet, listShapes,
   cubicBezier, linear, easeInOut, walkCycle, partBox,
   arcPath, curvePath, type Vec2,
 } from '../src/index.ts';
@@ -29,11 +29,11 @@ test('keyframe easing applies to the segment that starts at the key', () => {
   });
   scene.part('a').animate({ rotate: keys([[0, 0, linear], [0.5, 10, easeInOut], [1, 0]]) });
 
-  assert.equal(evaluate(scene, 0).get('a')!.rotate, 0);
-  assert.equal(evaluate(scene, 0.25).get('a')!.rotate, 5, 'linear segment interpolates linearly');
-  assert.equal(evaluate(scene, 0.5).get('a')!.rotate, 10);
+  assert.equal(netPose(evaluate(scene, 0).get('a')).rotate, 0);
+  assert.equal(netPose(evaluate(scene, 0.25).get('a')).rotate, 5, 'linear segment interpolates linearly');
+  assert.equal(netPose(evaluate(scene, 0.5).get('a')).rotate, 10);
   // The eased segment is symmetric, so its midpoint is still halfway in value.
-  assert.ok(Math.abs(evaluate(scene, 0.75).get('a')!.rotate - 5) < 1e-6);
+  assert.ok(Math.abs(netPose(evaluate(scene, 0.75).get('a')).rotate - 5) < 1e-6);
 });
 
 test('phase offsets sample the same curve earlier', () => {
@@ -45,8 +45,8 @@ test('phase offsets sample the same curve earlier', () => {
   scene.part('a').animate(track);
   scene.part('b').animate({ ...track, phase: 0.5 });
 
-  assert.equal(evaluate(scene, 0).get('b')!.rotate, evaluate(scene, 0.5).get('a')!.rotate);
-  assert.equal(evaluate(scene, 0.25).get('b')!.rotate, evaluate(scene, 0.75).get('a')!.rotate);
+  assert.equal(netPose(evaluate(scene, 0).get('b')).rotate, netPose(evaluate(scene, 0.5).get('a')).rotate);
+  assert.equal(netPose(evaluate(scene, 0.25).get('b')).rotate, netPose(evaluate(scene, 0.75).get('a')).rotate);
 });
 
 test('nested pivots compose: a child follows its parent', () => {
@@ -108,6 +108,35 @@ test('procedural motion is baked down to far fewer keyframes than samples', () =
   assert.ok(report.parts[0].keyframes < 32, `expected a sparse fit, got ${report.parts[0].keyframes} keyframes`);
 });
 
+test('layers stack, compose as matrices, and each compiles on its own terms', () => {
+  const build = () => character('t', { viewBox: [0, 0, 100, 100] }, () => {
+    part('arm', { pivot: [50, 50], contact: [50, 10] }, () => circle({ cx: 50, cy: 10, r: 4 }));
+  });
+
+  // A hand-keyed base with a procedural adjustment stacked on top of it.
+  const layered = build();
+  layered.part('arm')
+    .animate({ rotate: keys([[0, 0, linear], [0.5, 40], [1, 0]]) })
+    .animate({ rotate: sampled((t) => Math.sin(t * Math.PI * 2) * 6, 64) });
+
+  assert.ok(Math.abs(netPose(evaluate(layered, 0.25).get('arm')).rotate - 26) < 1e-9, 'layers add');
+
+  // The claim that matters is geometric, not arithmetic: the nested groups must
+  // land the contact point exactly where one combined rotation would.
+  const single = build();
+  single.part('arm').animate({ rotate: keys([[0, 26], [1, 26]]) });
+  const [ax, ay] = pointAt(layered, 'arm', 0.25);
+  const [bx, by] = pointAt(single, 'arm', 0.25);
+  assert.ok(Math.hypot(ax - bx, ay - by) < 1e-9, `layered ${ax},${ay} vs combined ${bx},${by}`);
+
+  // And the point of keeping them apart: the sampler only touches the layer that
+  // needs it. Summed into one channel, the keyed base would bake along with it.
+  const { report, svg } = compile(layered);
+  assert.deepEqual(report.parts.map((p) => [p.layer, p.mode]), [[0, 'exact'], [1, 'baked']]);
+  assert.match(svg, /class="h-arm"/);
+  assert.match(svg, /class="h-arm-l1"/);
+});
+
 test('lints catch a cycle that does not close and a foot that floats', () => {
   const scene = character('t', { viewBox: [0, 0, 100, 200], ground: 100 }, () => {
     part('leg', { pivot: [50, 0], contact: [50, 50] }, () => circle({ cx: 50, cy: 50, r: 1 }));
@@ -135,6 +164,69 @@ test('the reference walk keeps a planted foot at constant ground speed', () => {
     assert.ok(Math.abs(s - mean) / Math.abs(mean) < 0.06, `stance step ${s.toFixed(2)} deviates from ${mean.toFixed(2)}`);
   }
   assert.ok(mean < 0, 'a walking character tracks the ground backwards');
+});
+
+test('offstage is exempt from out-of-view, and only from that', () => {
+  // A scrolling background is wider than the frame at every instant by design,
+  // as is a character who walks on from the wings. Reporting either drowns the
+  // finding that matters, so the scene gets to say so.
+  const build = (offstage: boolean) =>
+    character('t', { viewBox: [0, 0, 100, 100], ground: 90 }, () => {
+      part('backdrop', { offstage }, () => circle({ cx: 50, cy: 50, r: 400 }));
+      part('foot', { pivot: [50, 0], contact: [50, 20] }, () => circle({ cx: 50, cy: 20, r: 1 }));
+    });
+
+  assert.ok(lint(build(false)).some((f) => f.rule === 'out-of-view'));
+  const quiet = lint(build(true));
+  assert.ok(!quiet.some((f) => f.rule === 'out-of-view'), 'the backdrop stops being measured');
+  // Everything else still applies: the contact point is 70 units above ground.
+  assert.ok(quiet.some((f) => f.rule === 'no-ground-contact'), 'other rules keep running');
+});
+
+test('the scrolling scene moves the ground at exactly the speed the gait demands', async () => {
+  // The one thing in `crane-stairs.ts` that no lint can check. `foot-slip`
+  // watches the foot against the character, so a foot running perfectly on the
+  // spot passes it while the floor pours past at the wrong speed — the failure
+  // is invisible to every instrument except this one.
+  const { craneStairs, run } = await import('../examples/crane-stairs.ts');
+  assert.deepEqual(lint(craneStairs), []);
+
+  const world = craneStairs.find('world')!;
+  // Where the sole is touching, in the scenery's own coordinates: its position
+  // on screen, less however far the scenery has been scrolled under it.
+  const touchdown = (leg: string, t: number) => {
+    const f = frameAt(craneStairs, t);
+    // Where the scenery has scrolled to, read off its matrix rather than off the
+    // summed channels: composition is what the browser does, and it is exact.
+    return f.point(craneStairs.find(`${leg}.foot`)!)[0] - f.matrices.get(world.path)![4];
+  };
+
+  // Stance is the first 0.36 of the stride; its two ends are touchdown and
+  // push-off, where the foot is genuinely rolling, so they are left out.
+  //
+  // The tolerance is not zero because the knee flexes through stance, which
+  // changes the leg's effective length and so the rate the contact point tracks
+  // at — a property of the gait, present in the cycle scenes too, and worth
+  // about half a percent of a stride. A mismatched scroll speed is not subtle
+  // by comparison: being 5% out drags the foot twice as far as this allows.
+  for (const [leg, from] of [['legNear', 0], ['legFar', 0.5]] as const) {
+    let checked = 0;
+    let lo = Infinity;
+    let hi = -Infinity;
+    let base: number | null = null;
+    for (let i = 0; i < 600; i++) {
+      const t = 0.12 + (i / 600) * 0.26; // several strides, all at cruising speed
+      const u = (run.phase(t) - from + 1) % 1;
+      if (u < 0.06 || u > 0.3) { base = null; continue; }
+      const at = touchdown(leg, t);
+      if (base === null) base = at;
+      lo = Math.min(lo, at - base);
+      hi = Math.max(hi, at - base);
+      checked++;
+    }
+    assert.ok(checked > 100, `${leg}: only ${checked} planted samples`);
+    assert.ok(hi - lo < run.stride * 0.01, `${leg}: contact slides ${(hi - lo).toFixed(2)} units while planted`);
+  }
 });
 
 test('a character with different proportions also stays clean', async () => {
@@ -270,7 +362,7 @@ test('walkCycle parameters change the motion they claim to', () => {
         return s;
       })(),
       t,
-    ).get('p')!.rotate;
+    ).get('p')![0].rotate;
 
   assert.ok(Math.abs(at(big.thigh, 0)) > Math.abs(at(small.thigh, 0)), 'a bigger reach is a longer stride');
 });

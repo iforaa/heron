@@ -6,8 +6,9 @@
  * subtly changes speed mid-step, but it is trivially visible in the numbers.
  */
 
-import type { Channel, Character } from './scene.ts';
-import { type Frame, channelAt, sampleFrames } from './timeline.ts';
+import { type Character, CHANNELS } from './scene.ts';
+import { type Frame, evaluate, netPose, sampleFrames } from './timeline.ts';
+import { EPSILON } from './compile.ts';
 import { frameBox, localCorners } from './render.ts';
 
 export interface Finding {
@@ -39,7 +40,67 @@ export function lint(ch: Character): Finding[] {
   // per sample is how a 13-part rig ended up walking its own tree hundreds of
   // times for a single lint.
   const frames = sampleFrames(ch, SAMPLES);
-  return [...loopSeam(ch), ...groundChecks(ch, frames), ...viewBoxCheck(ch, frames)];
+  return [
+    // A film is allowed to end somewhere other than where it began. That is not
+    // a seam, it is the plot.
+    ...(ch.once ? [] : loopSeam(ch)),
+    ...swapChecks(ch, frames),
+    ...groundChecks(ch, frames),
+    ...viewBoxCheck(ch, frames),
+  ];
+}
+
+/**
+ * Holds a `swap` to the one rule that makes it a swap: exactly one variant
+ * showing, at every instant.
+ *
+ * Both failures are invisible in the place you would look for them. Two variants
+ * at once is not a doubled image — the shapes are similar and nearly aligned, so
+ * it reads as a slightly heavier, slightly wrong drawing, which an agent will
+ * happily accept as the intended one. None at all is a hole in the film, and a
+ * hole one frame long does not survive into a contact sheet. The numbers say it
+ * immediately.
+ *
+ * The variants' own opacity is what is judged, not their opacity in the scene,
+ * so a swap that is deliberately faded out as a whole — by its group, or by a
+ * shot above it — is still checked for being internally coherent.
+ */
+function swapChecks(ch: Character, frames: Frame[]): Finding[] {
+  const out: Finding[] = [];
+  for (const node of ch.nodes()) {
+    if (!node.variants) continue;
+    const children = node.content.flatMap((item) => ('node' in item ? [item.node] : []));
+    const everShown = new Set<string>();
+
+    for (const frame of frames) {
+      const on = children.filter((c) => netPose(frame.pose.get(c.path)).opacity > 0.5);
+      for (const c of on) everShown.add(c.name);
+      if (on.length === 1) continue;
+      out.push({
+        rule: 'swap-overlap',
+        severity: 'error',
+        part: node.path,
+        message: on.length
+          ? 'more than one variant is showing, so they are drawn on top of each other'
+          : 'no variant is showing, so there is a hole here',
+        detail: `at t=${frame.t.toFixed(3)}, ${on.length} of ${children.length} visible`
+          + (on.length ? `: ${on.map((c) => c.name).join(', ')}` : ''),
+      });
+      break;
+    }
+
+    for (const c of children) {
+      if (everShown.has(c.name)) continue;
+      out.push({
+        rule: 'swap-orphan',
+        severity: 'warning',
+        part: c.path,
+        message: 'this variant is never shown, so it is weight in the file and nothing on screen',
+        detail: `"${c.name}" is one of ${children.length} variants of ${node.path || '(root)'}`,
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -48,22 +109,31 @@ export function lint(ch: Character): Finding[] {
  */
 function loopSeam(ch: Character): Finding[] {
   const out: Finding[] = [];
+  // Judged on the net of every layer, not layer by layer. What jumps is the
+  // composed transform, and layered acting routinely has one layer end somewhere
+  // else because another puts it back — a held glance and its release are two
+  // layers that only close together.
+  const open = evaluate(ch, 0);
+  const shut = evaluate(ch, 1);
   for (const node of ch.nodes()) {
-    if (!node.track) continue;
-    for (const [name, chan] of Object.entries(node.track)) {
-      if (name === 'phase' || !chan || typeof chan !== 'object') continue;
-      const c = chan as Channel;
-      const a = channelAt(c, 0);
-      const b = channelAt(c, 1);
-      if (Math.abs(a - b) > 1e-6) {
-        out.push({
-          rule: 'loop-seam',
-          severity: 'error',
-          part: node.path,
-          message: `${name} does not return to its starting value, so the loop jumps every cycle`,
-          detail: `${name}: t=0 is ${a.toFixed(2)}, t=1 is ${b.toFixed(2)}`,
-        });
-      }
+    if (!node.tracks.length) continue;
+    const a = netPose(open.get(node.path));
+    const b = netPose(shut.get(node.path));
+    for (const name of CHANNELS) {
+      // Judged against the compiler's own error budget rather than against zero.
+      // A physical settle approaches its target without ever quite arriving, and
+      // demanding an exactness the compiled file does not itself preserve would
+      // reject correct motion — the same 0.4 degrees a baked curve is allowed to
+      // differ by cannot simultaneously be a defect when an author leaves it.
+      if (Math.abs(a[name] - b[name]) <= EPSILON[name]) continue;
+      out.push({
+        rule: 'loop-seam',
+        severity: 'error',
+        part: node.path,
+        message: `${name} does not return to its starting value, so the loop jumps every cycle`,
+        detail: `${name}: t=0 is ${a[name].toFixed(2)}, t=1 is ${b[name].toFixed(2)}`
+          + (node.tracks.length > 1 ? `, summed over ${node.tracks.length} layers` : ''),
+      });
     }
   }
   return out;
@@ -179,6 +249,9 @@ function groundChecks(ch: Character, frames: Frame[]): Finding[] {
 function viewBoxCheck(ch: Character, frames: Frame[]): Finding[] {
   const [vx, vy, vw, vh] = ch.viewBox;
   const corners = localCorners(ch);
+  // Anything declared offstage is meant to run past the frame edge, so measuring
+  // it here would report the pan, or the entrance, as the defect.
+  for (const node of ch.nodes()) if (node.offstage) corners.delete(node.path);
   for (const frame of frames) {
     const t = frame.t;
     const b = frameBox(frame, corners);

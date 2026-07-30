@@ -15,7 +15,8 @@ export type NodePose = Record<ChannelName, number>;
 
 export const REST: NodePose = { ...NEUTRAL };
 
-export type Pose = Map<string, NodePose>;
+/** One entry per part, holding one pose per layer of motion on it. */
+export type Pose = Map<string, NodePose[]>;
 
 /** Value of one channel at cycle time t (0..1). */
 export function channelAt(ch: Channel, t: number): number {
@@ -47,8 +48,32 @@ export function trackAt(track: Track | undefined, t: number): NodePose {
 
 export function evaluate(ch: Character, t: number): Pose {
   const pose: Pose = new Map();
-  for (const node of ch.nodes()) pose.set(node.path, trackAt(node.track, t));
+  for (const node of ch.nodes()) pose.set(node.path, node.tracks.map((tr) => trackAt(tr, t)));
   return pose;
+}
+
+/**
+ * The net effect of a part's layers, per channel.
+ *
+ * For display and for the common case only. Rotations and translations add and
+ * scales multiply, which is exact when the layers share a pivot and is what a
+ * reader wants to see either way — but it is not matrix composition, so nothing
+ * geometric may be built on it. Use the matrices for that.
+ */
+export function netPose(poses: NodePose[] | undefined): NodePose {
+  const out = { ...REST };
+  for (const p of poses ?? []) {
+    out.rotate += p.rotate;
+    out.x += p.x;
+    out.y += p.y;
+    out.scaleX *= p.scaleX;
+    out.scaleY *= p.scaleY;
+    out.opacity *= p.opacity;
+    // Dash offset is inherited rather than composed, so the innermost layer that
+    // sets it is the one the shapes actually see.
+    out.draw = p.draw;
+  }
+  return out;
 }
 
 // --- matrices ----------------------------------------------------------------
@@ -73,6 +98,24 @@ export function apply(m: Mat, p: Vec2): Vec2 {
   return [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
 }
 
+/** Inverse of an affine matrix, for turning world targets back into rig space. */
+export function invert(m: Mat): Mat {
+  const det = m[0] * m[3] - m[1] * m[2];
+  if (Math.abs(det) < 1e-12) throw new Error('heron: cannot invert a singular transform');
+  const a = m[3] / det;
+  const b = -m[1] / det;
+  const c = -m[2] / det;
+  const d = m[0] / det;
+  return [
+    a,
+    b,
+    c,
+    d,
+    -(a * m[4] + c * m[5]),
+    -(b * m[4] + d * m[5]),
+  ];
+}
+
 /**
  * A part's local transform: translate, then rotate and scale about the pivot.
  *
@@ -91,6 +134,17 @@ function localMatrix(pose: NodePose, pivot?: Vec2): Mat {
   const scl: Mat = [pose.scaleX, 0, 0, pose.scaleY, 0, 0];
   const fromPivot: Mat = [1, 0, 0, 1, -px, -py];
   return mul(mul(mul(mul(t, toPivot), rot), scl), fromPivot);
+}
+
+/**
+ * A part's layers, composed. Outermost first, matching the order the compiled
+ * groups nest in, so the matrix and the DOM cannot disagree about which layer
+ * sits above which.
+ */
+function stackMatrix(poses: NodePose[] | undefined, pivot?: Vec2): Mat {
+  let m = IDENTITY;
+  for (const p of poses ?? []) m = mul(m, localMatrix(p, pivot));
+  return m;
 }
 
 /** World matrix per part at time t, composed down the tree. */
@@ -114,11 +168,24 @@ export interface Frame {
   point(node: Node, local?: Vec2): Vec2;
 }
 
-export function frameAt(ch: Character, t: number): Frame {
-  const pose = evaluate(ch, t);
+/**
+ * A captured set of tracks, used when a behavior must solve against the pose
+ * that existed before it appended its own channels.
+ */
+export type TrackSnapshot = Map<string, Track[]>;
+
+/**
+ * The scene posed at time t — from its live tracks, or from a snapshot taken
+ * before a behavior appended its own channels.
+ */
+export function frameAt(ch: Character, t: number, tracks?: TrackSnapshot): Frame {
+  const pose: Pose = new Map();
+  for (const node of ch.nodes()) {
+    pose.set(node.path, (tracks?.get(node.path) ?? node.tracks).map((track) => trackAt(track, t)));
+  }
   const matrices = new Map<string, Mat>();
   const walk = (node: Node, parent: Mat) => {
-    const m = mul(parent, localMatrix(pose.get(node.path) ?? REST, node.pivot));
+    const m = mul(parent, stackMatrix(pose.get(node.path), node.pivot));
     matrices.set(node.path, m);
     for (const item of node.content) if ('node' in item) walk(item.node, m);
   };

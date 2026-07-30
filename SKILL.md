@@ -297,10 +297,125 @@ crane.part('shadow').animate({ scaleX: pulse(1.06, 0.94), opacity: pulse(0.5, 0.
 crane.part('tail').animate({ rotate: keys([[0, 2], [0.5, -2], [1, 2]], easeInOut) });
 ```
 
+For a film, author a move in its own local `0..1` time and place it inside a
+named beat with `within()`. Its first and last values hold outside the beat, and
+keyed motion stays exact:
+
+```ts
+const reveal = { name: 'reveal', from: 0.4, to: 0.6, seconds: 1.2 };
+scene.part('mark').animate({
+  scaleX: within(reveal, keys([[0, 0], [0.7, 1.08, easeOut], [1, 1]])),
+  scaleY: within(reveal, keys([[0, 0], [0.7, 1.08, easeOut], [1, 1]])),
+});
+```
+
+When shots and transitions overlap, name their windows in seconds with a cue
+sheet. A cue sheet does not require windows to be sequential or cover the whole
+film:
+
+```ts
+const film = cueSheet(scene, {
+  runner: [0, 2.9],
+  wipe: [2.7, 4.0],
+  voice: [3.9, 6.2],
+});
+
+scene.part('wipe').animate({
+  scaleX: film.place('wipe', keys([[0, 0], [1, 10]])),
+  scaleY: film.place('wipe', keys([[0, 0], [1, 10]])),
+});
+```
+
+For a field of dots reorganising through several formations, keep the first
+point list identical to where the dots were drawn and use `morphThrough()`.
+Nearest-target assignment is carried from one form into the next, transform
+times stay aligned, and spare dots fade:
+
+```ts
+scene.field('dots').morphThrough([
+  { at: 0, points: signal, scale: 0.3, opacity: 0 },
+  { at: 0.25, points: signal, scale: 1, opacity: 1, stagger: 0.08 },
+  { at: 0.6, points: burst },
+  { at: 1, points: logo },
+], { window: film.at('voice') });
+```
+
+Titles should use deterministic vector geometry rather than system SVG text.
+The built-in uppercase face is self-contained and works with `draw`:
+
+```ts
+layer('title', () => strokeText('EVERY IDEA STARTS HERE', {
+  x: 640, y: 600, size: 18, align: 'center',
+  tracking: 0.4, stroke: '#fff', width: 2,
+}));
+scene.part('title').animate({ draw: film.place('voice', keys([[0, 0], [1, 1]])) });
+```
+
+When typography must match a real brand font, convert the font to filled path
+geometry at authoring time. This preserves kerning and shaping without leaving
+a system-font dependency in the SVG:
+
+```ts
+const brand = loadOutlineFont('./assets/Brand-Regular.otf');
+layer('wordmark', () => outlineText('NEXA AI', {
+  font: brand, x: 640, y: 560, size: 70, align: 'center', fill: '#fff',
+}));
+```
+
+Use named paint and reveal resources for commercial graphics:
+
+```ts
+const glow = radialGradient('glow', {
+  stops: [
+    { at: 0, color: '#5ee7ff', opacity: 0.9 },
+    { at: 1, color: '#1688ff', opacity: 0 },
+  ],
+});
+const window = clipPath('window', () =>
+  circle({ cx: 640, cy: 360, r: 180, fill: '#fff' }));
+const feather = mask('feather', () =>
+  circle({ cx: 640, cy: 360, r: 220, fill: glow }), { mode: 'alpha' });
+
+part('reveal', { clip: window, mask: feather }, () => {
+  rect({ x: 0, y: 0, w: 1280, h: 720, fill: '#fff' });
+});
+```
+
+`clipPath()` is binary geometry. `mask()` is painted luminance/alpha and is the
+one for feathered reveals. Both are static definitions carried by an animated
+part; move or scale that part to animate the reveal.
+
+Use `pathMorph()` only when every key has the same command topology. It will not
+guess point correspondence, and arcs must be converted to cubic curves:
+
+```ts
+path({ d: pathMorph([
+  [0, 'M20 20 C40 0 80 0 100 20 C80 60 40 60 20 20 Z', easeInOut],
+  [1, 'M10 30 C35 5 90 10 110 40 C75 70 30 65 10 30 Z'],
+]), fill: '#fff' });
+```
+
 Part paths may be shortened: `legNear.foot` resolves to
 `body.legNear.thigh.shin.foot`. Ambiguous shorthands are an error, never a guess.
 
-Animatable channels are `rotate`, `x`, `y`, `scaleX`, `scaleY`, `opacity`. That
+For an arm or leg following a moving target, use world-space `reach()` instead
+of solving two joint angles independently on every frame:
+
+```ts
+reach(scene, {
+  upper: 'body.arm.upper',
+  lower: 'body.arm.lower',
+  target: { part: 'target' }, // or (t) => [x, y]
+  bend: 1,
+});
+```
+
+The upper/lower parts must be a nested positive-Y rest chain. `reach()` layers
+over motion already on the joints and their ancestors; unreachable targets
+clamp without stretching.
+
+Animatable channels are `rotate`, `x`, `y`, `scaleX`, `scaleY`, `opacity`, and
+`draw`. That
 list is deliberately what CSS can express; anything else could not be compiled
 honestly. `sampled(fn, n)` drives a channel from an arbitrary function of cycle
 time, but it has to be baked, so prefer `keys()` when you can.
@@ -359,11 +474,13 @@ Other options worth knowing when a gait misbehaves:
 ```bash
 heron shapes scene.ts -o shapes.png       # one cell per run - which ink is which part
 heron sheet scene.ts -n 8 -o sheet.png     # eight poses tiled - the default check
+heron sheet film.ts --cues -n 3 -o cues.png # start/middle/end of every exported cue
 heron snapshot scene.ts -t 0.62 -o f.png   # one pose, e.g. the push-off frame
 heron inspect scene.ts -t 0.3              # the same pose as numbers
 heron match scene.ts icon.png              # the rest pose against the reference
 heron lint scene.ts                        # defects invisible in a still frame
 heron build scene.ts -o out.svg            # the deliverable
+heron video film.ts -o film.mp4 --fps 30 --audio mix.wav
 ```
 
 `sheet` is the one to reach for. Motion is a relationship between frames, so a
@@ -389,6 +506,15 @@ or nowhere near. A very large percentage usually does not mean a subtle timing
 problem — it usually means the foot never leaves the ground at all, or lands
 while still reaching forward. Check with `inspect` at a few times, or print
 `pointAt(scene, 'legNear.foot', t)` across the cycle, before touching easings.
+
+For handoff to another process, `serializeScene(scene)` returns versioned,
+JSON-safe IR. Procedural channels are baked to explicit keys; do not expect a
+closure to survive JSON. `parseScene(json)` rehydrates a normal Character.
+
+Video is optional delivery, not the source of truth. `heron video` evaluates
+static frames through the same path used by snapshots, streams RGBA to ffmpeg,
+and muxes an optional soundtrack. Always judge timing with `studio` and
+cue-aware sheets before paying the cost of a full-resolution encode.
 
 ## Making a walk look right
 

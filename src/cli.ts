@@ -10,6 +10,7 @@
  *   snapshot  one pose, as an image the agent can actually look at
  *   shapes    every run picked out in turn, which is how anatomy is decided
  *   sheet     several poses tiled, which is how motion is judged
+ *   studio    the built animation with a scrubber, which is how timing is judged
  *   inspect   the same pose as numbers, when geometry is the question
  *   lint      defects that are invisible in a still frame
  *   build     the deliverable, plus a report of anything that was approximated
@@ -25,13 +26,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
 
 import { Character } from './scene.ts';
-import { renderStatic, renderSheet, renderShapeSheet, listShapes, boxOfCorners, localCorners, sheetTimes, sheetWidth } from './render.ts';
+import {
+  renderStatic, renderSheet, renderCueSheet, renderShapeSheet, listShapes, boxOfCorners,
+  localCorners, cueFrames, sheetTimes, sheetWidth,
+} from './render.ts';
 import { compile } from './compile.ts';
 import { lint, formatFindings } from './lint.ts';
-import { frameAt } from './timeline.ts';
+import { studio } from './studio.ts';
+import { CueSheet, Score } from './score.ts';
+import { frameAt, netPose } from './timeline.ts';
 import { trace } from './trace.ts';
+import { halftoneFile, plateSource } from './halftone.ts';
 import { match, formatMatch } from './match.ts';
 import { encodePng } from './raster.ts';
+import { renderVideo } from './video.ts';
 
 interface Args {
   _: string[];
@@ -54,12 +62,14 @@ function parseArgs(argv: string[]): Args {
   return out;
 }
 
-async function loadScene(file: string): Promise<Character> {
-  const url = pathToFileURL(resolve(file)).href;
-  const mod = (await import(url)) as Record<string, unknown>;
-  if (mod.default instanceof Character) return mod.default;
-  for (const v of Object.values(mod)) if (v instanceof Character) return v;
-  throw new Error(`heron: ${file} does not export a Character`);
+async function loadScene(file: string): Promise<Record<string, unknown>> {
+  return (await import(pathToFileURL(resolve(file)).href)) as Record<string, unknown>;
+}
+
+/** The first export of a given kind, preferring `default`. */
+function pick<T>(mod: Record<string, unknown>, kind: new (...a: never[]) => T): T | undefined {
+  if (mod.default instanceof kind) return mod.default as T;
+  return Object.values(mod).find((v) => v instanceof kind) as T | undefined;
 }
 
 function write(file: string, data: string | Uint8Array): void {
@@ -93,13 +103,17 @@ const USAGE = `heron - compile character animation into a self-contained animate
 
   heron trace    <image.png> [-o scene.ts] [--epsilon 1.2] [--threshold 0.22]
                  [--fit 1.5] [--ribbons all|taper|none] [--refine 12]
+  heron halftone <image.png...> [-o plates.ts] [--across 44] [--threshold 0.15]
+                 [--width 1000] [--square] [--name PLATES]
   heron match    <scene.ts> <reference.png> [-o overlay.png] [-t 0]
   heron snapshot <scene.ts> [-t 0.4] [-o frame.png] [-w 520] [--svg]
   heron shapes   <scene.ts> [-o shapes.png] [--cols 5] [--svg]
-  heron sheet    <scene.ts> [-n 8] [-o sheet.png] [--cols 4] [--svg]
+  heron sheet    <scene.ts> [-n 8] [-o sheet.png] [--cols 4] [--onion 3] [--cues] [--svg]
   heron inspect  <scene.ts> [-t 0.4]
   heron lint     <scene.ts>
+  heron studio   <scene.ts> [-o scene.html] [-w 900]
   heron build    <scene.ts> [-o out.svg] [-w 360]
+  heron video    <scene.ts> [-o out.mp4] [-w 1280] [--fps 30] [--audio soundtrack.wav]
 
 Times are fractions of one cycle, 0 to 1.`;
 
@@ -164,7 +178,29 @@ async function main(): Promise<void> {
     return;
   }
 
-  const ch = await loadScene(file);
+  // Halftone reads images too, and takes a whole sequence of them.
+  if (cmd === 'halftone') {
+    const images = (args._ as string[]).slice(1);
+    const o = {
+      across: num(args.across, 44),
+      threshold: num(args.threshold, 0.15),
+      stagger: !args.square,
+      width: args.width ? num(args.width, 1000) : undefined,
+    };
+    const plates = images.map((f) => halftoneFile(f, o));
+    const out = String(args.o ?? 'plates.ts');
+    write(out, plateSource(plates, String(args.name ?? 'PLATES')));
+    const counts = plates.map((p) => p.dots.length);
+    console.log(`${out}  ${plates.length} plate(s), ${Math.min(...counts)}-${Math.max(...counts)} dots each`);
+    console.log(`  lattice ${o.across} across, pitch ${plates[0].pitch.toFixed(1)}, ink above ${o.threshold}`);
+    console.log(`  a halftone keeps the silhouette and throws the rest away - check it read back`);
+    console.log(`  with heron sheet, and raise --across if the figure has gone to noise.`);
+    return;
+  }
+
+  const mod = await loadScene(file);
+  const ch = pick(mod, Character);
+  if (!ch) throw new Error(`heron: ${file} does not export a Character`);
 
   if (cmd === 'match') {
     const reference = (args._ as string[])[2];
@@ -205,11 +241,53 @@ async function main(): Promise<void> {
     }
 
     case 'sheet': {
+      const cues = pick(mod, CueSheet);
+      if (args.cues) {
+        if (!cues) throw new Error(`heron: ${file} must export a CueSheet to use sheet --cues`);
+        const names = typeof args.cues === 'string' ? args.cues.split(',') : undefined;
+        const samples = Math.max(1, num(args.n, 3));
+        const frames = cueFrames(cues, { samples, cues: names });
+        const cols = num(args.cols, Math.min(4, frames.length));
+        const out = emit(
+          renderCueSheet(ch, cues, { cols, samples, cues: names }),
+          args, 'cues', sheetWidth(cols),
+        );
+        console.log(`${out}  (${frames.length} cue frames across ${new Set(frames.map((f) => f.cue)).size} cues)`);
+        break;
+      }
       const n = Math.max(2, num(args.n, 8));
       const cols = num(args.cols, Math.min(4, n));
       const times = args.t ? String(args.t).split(',').map(Number) : sheetTimes(n);
-      const out = emit(renderSheet(ch, times, { cols }), args, 'sheet', sheetWidth(cols));
+      const onion = args.onion === true ? 3 : num(args.onion, 0);
+      const out = emit(renderSheet(ch, times, { cols, onion }), args, 'sheet', sheetWidth(cols));
       console.log(`${out}  (${times.length} frames: ${times.map((t) => t.toFixed(2)).join(' ')})`);
+      if (onion) console.log(`  each cell trails the ${onion} frames before it, so arcs and direction read`);
+      break;
+    }
+
+    case 'studio': {
+      const out = String(args.o ?? `${ch.name}.html`);
+      // A scene that exports its score gets its beats drawn; one that does not
+      // still gets every channel as a curve.
+      const beats = pick(mod, Score);
+      write(out, studio(ch, { width: num(args.w, 900), score: beats }));
+      console.log(`${out}  scrubbable, with ${beats ? `${beats.beats.length} beats and ` : ''}every channel plotted`);
+      console.log(`  the built animation itself, paused and driven by delay - not a replay of it`);
+      break;
+    }
+
+    case 'video': {
+      const out = String(args.o ?? `${ch.name}.mp4`);
+      const report = await renderVideo(ch, out, {
+        width: num(args.w, ch.viewBox[2]),
+        fps: num(args.fps, 30),
+        audio: args.audio ? String(args.audio) : undefined,
+        codec: args.codec ? String(args.codec) as 'h264' | 'h265' | 'vp9' : undefined,
+        crf: num(args.crf, 18),
+        background: args.background ? String(args.background) : undefined,
+      });
+      console.log(`${report.file}  ${report.width}x${report.height}, ${report.frames} frames at ${report.fps}fps`);
+      console.log(`  ${report.duration.toFixed(2)}s ${report.codec}${report.audio ? ', soundtrack muxed' : ''}`);
       break;
     }
 
@@ -221,12 +299,13 @@ async function main(): Promise<void> {
       for (const node of ch.nodes()) {
         if (!node.path) continue;
         const depth = node.path.split('.').length - 1;
-        const p = frame.pose.get(node.path)!;
+        const p = netPose(frame.pose.get(node.path));
         const bits: string[] = [];
         if (p.rotate) bits.push(`rot ${p.rotate.toFixed(1)}deg`);
         if (p.x || p.y) bits.push(`t (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
         if (p.scaleX !== 1 || p.scaleY !== 1) bits.push(`scale ${p.scaleX.toFixed(2)},${p.scaleY.toFixed(2)}`);
         if (p.opacity !== 1) bits.push(`opacity ${p.opacity.toFixed(2)}`);
+        if (node.tracks.length > 1) bits.push(`${node.tracks.length} layers`);
         if (node.pivot) bits.push(`pivot (${node.pivot[0]}, ${node.pivot[1]})`);
         if (node.contact) {
           const [wx, wy] = frame.point(node);
@@ -257,7 +336,10 @@ async function main(): Promise<void> {
       console.log(`${out}  ${(Buffer.byteLength(svg) / 1024).toFixed(1)} kB  ${report.parts.length} animated parts, ${frames} keyframes`);
       if (baked.length) {
         console.log(`  baked to sampled keyframes (within EPSILON of the evaluator):`);
-        for (const p of baked) console.log(`    ${p.path}: ${p.reason}, ${p.keyframes} keyframes`);
+        for (const p of baked) {
+          const where = p.layer ? `${p.path} layer ${p.layer}` : p.path;
+          console.log(`    ${where}: ${p.reason}, ${p.keyframes} keyframes`);
+        }
       }
       const findings = lint(ch);
       if (findings.length) console.log(formatFindings(findings));

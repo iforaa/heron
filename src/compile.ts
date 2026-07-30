@@ -17,7 +17,11 @@
 
 import { type Channel, type Character, type ChannelName, type Node, type Track, CHANNELS, NEUTRAL, activeChannels } from './scene.ts';
 import { channelAt } from './timeline.ts';
-import { cssClass, nodeSvg, outputSize, round, svgOpen } from './render.ts';
+import type { Easing } from './easing.ts';
+import {
+  block, cssClass, dashOffset, definitionsSvg, listShapes, nodeSvg, outputSize, renderContext,
+  round, strokeLength, svgOpen,
+} from './render.ts';
 
 /** Maximum deviation permitted when refitting a sampled curve, per channel. */
 export const EPSILON = {
@@ -27,12 +31,13 @@ export const EPSILON = {
   scaleX: 0.004,
   scaleY: 0.004,
   opacity: 0.01,
+  draw: 0.004,     // fraction of the stroke revealed
 } as const;
 
 type Name = ChannelName;
 
 export interface CompileReport {
-  parts: { path: string; mode: 'exact' | 'baked'; keyframes: number; reason?: string }[];
+  parts: { path: string; layer: number; mode: 'exact' | 'baked'; keyframes: number; reason?: string }[];
 }
 
 /**
@@ -106,14 +111,6 @@ function transformCss(vals: Partial<Record<Name, number>>, names: Name[]): strin
   return parts.length ? parts.join(' ') : 'none';
 }
 
-function keyframeBody(vals: Partial<Record<Name, number>>, names: Name[]): string {
-  const out: string[] = [];
-  const moving = names.filter((n) => n !== 'opacity');
-  if (moving.length) out.push(`transform: ${transformCss(vals, moving)};`);
-  if (names.includes('opacity')) out.push(`opacity: ${round(vals.opacity ?? 1)};`);
-  return out.join(' ');
-}
-
 /**
  * One CSS property's worth of animation for a part.
  *
@@ -122,11 +119,53 @@ function keyframeBody(vals: Partial<Record<Name, number>>, names: Name[]): strin
  * and `transform` are separate properties and run as separate animations on the
  * same element, so a fade that disagrees with a rotation about keyframe times
  * no longer forces the rotation to be baked along with it.
+ *
+ * `draw` is the third: a stroke revealing itself is `stroke-dashoffset`, which
+ * CSS animates as happily as anything else. `dash` is the part's own stroke
+ * length, which is what turns a channel of 0..1 into user units.
  */
-const GROUPS: { property: 'transform' | 'opacity'; channels: readonly Name[] }[] = [
-  { property: 'transform', channels: CHANNELS.filter((c) => c !== 'opacity') },
-  { property: 'opacity', channels: ['opacity'] },
+interface Group {
+  suffix: string;
+  channels: readonly Name[];
+  render: (vals: Partial<Record<Name, number>>, names: Name[], dash: () => number) => string;
+}
+
+/** The keyframes block a part's layer uses for a given channel. */
+export function keyframeName(path: string, layer: number, channel: Name): string {
+  return `kf-${cssClass(path, layer).slice(2)}${GROUP_OF.get(channel)!.suffix}`;
+}
+
+const GROUPS: Group[] = [
+  {
+    suffix: '',
+    channels: CHANNELS.filter((c) => c !== 'opacity' && c !== 'draw'),
+    render: (vals, names) => `transform: ${transformCss(vals, names)};`,
+  },
+  {
+    suffix: '-o',
+    channels: ['opacity'],
+    render: (vals) => `opacity: ${round(vals.opacity ?? NEUTRAL.opacity)};`,
+  },
+  {
+    suffix: '-d',
+    channels: ['draw'],
+    render: (vals, _names, dash) => `stroke-dashoffset: ${dashOffset(vals.draw ?? 1, dash())};`,
+  },
 ];
+
+/** Every channel belongs to exactly one group; the table above is the authority. */
+const GROUP_OF = new Map<Name, Group>(
+  GROUPS.flatMap((g) => g.channels.map((c): [Name, Group] => [c, g])),
+);
+
+/**
+ * A keyframe's timing function, or nothing when CSS's default already says it.
+ * The last keyframe never takes one — there is no segment after it to ease.
+ * Part of the parity contract, so it is stated once for transforms and morphs.
+ */
+function easeSuffix(ease: Easing, last: boolean): string {
+  return !last && ease.css !== 'linear' ? ` animation-timing-function: ${ease.css};` : '';
+}
 
 interface Emitted {
   rule: string;
@@ -136,27 +175,25 @@ interface Emitted {
 function keyframeLines(
   track: Track,
   names: Name[],
-  property: 'transform' | 'opacity',
+  group: Group,
+  dash: () => number,
   report: CompileReport,
   path: string,
+  layer: number,
 ): { lines: string[]; count: number } {
   const chans = names.map((n) => track[n]!);
   const reason = bakeReason(chans);
-  const body = (vals: Partial<Record<Name, number>>) =>
-    property === 'opacity'
-      ? `opacity: ${round(vals.opacity ?? NEUTRAL.opacity)};`
-      : `transform: ${transformCss(vals, names)};`;
+  const body = (vals: Partial<Record<Name, number>>) => group.render(vals, names, dash);
 
   if (!reason) {
     const ref = chans[0] as Extract<Channel, { kind: 'keys' }>;
     const lines = ref.keys.map((k, i) => {
       const vals: Partial<Record<Name, number>> = {};
       for (const n of names) vals[n] = channelAt(track[n]!, k.t);
-      const last = i === ref.keys.length - 1;
-      const timing = !last && k.ease.css !== 'linear' ? ` animation-timing-function: ${k.ease.css};` : '';
+      const timing = easeSuffix(k.ease, i === ref.keys.length - 1);
       return `      ${round(k.t * 100, 2)}% { ${body(vals)}${timing} }`;
     });
-    report.parts.push({ path, mode: 'exact', keyframes: lines.length });
+    report.parts.push({ path, layer, mode: 'exact', keyframes: lines.length });
     return { lines, count: lines.length };
   }
 
@@ -175,33 +212,45 @@ function keyframeLines(
     for (const [name, arr] of series) vals[name] = arr[i];
     return `      ${round(times[i] * 100, 2)}% { ${body(vals)} }`;
   });
-  report.parts.push({ path, mode: 'baked', keyframes: lines.length, reason });
+  report.parts.push({ path, layer, mode: 'baked', keyframes: lines.length, reason });
   return { lines, count: lines.length };
 }
 
-function emitNode(node: Node, duration: number, report: CompileReport): Emitted | null {
-  const track = node.track;
-  if (!track) return null;
+/**
+ * One layer of one part: its own element, its own animations.
+ *
+ * Keeping layers as separate elements is what makes them worth having. A
+ * hand-keyed gait and a procedural flourish stacked on the same joint would,
+ * summed into one channel, drag the gait through the sampler with the flourish;
+ * as two elements the gait stays `exact` and only the flourish bakes.
+ */
+function emitLayer(
+  node: Node, layer: number, duration: number, repeat: string, report: CompileReport,
+): Emitted | null {
+  const track = node.tracks[layer];
   const active = activeChannels(track);
   if (active.length === 0) return null;
 
-  const base = `kf-${node.path.replace(/\./g, '-')}`;
   const delay = track.phase ? ` ${round(-track.phase * duration, 4)}s` : '';
   const animations: string[] = [];
   const keyframes: string[] = [];
 
+  // Measured lazily: only the `draw` group wants it, and finding it walks the
+  // whole subtree and re-parses every path in it.
+  let measured: number | undefined;
+  const dash = () => (measured ??= strokeLength(node));
   for (const group of GROUPS) {
     const names = active.filter((n) => group.channels.includes(n));
     if (!names.length) continue;
-    const anim = GROUPS.length > 1 && group.property === 'opacity' ? `${base}-o` : base;
-    const { lines } = keyframeLines(track, names, group.property, report, node.path);
-    animations.push(`${anim} ${duration}s linear${delay} infinite`);
+    const anim = keyframeName(node.path, layer, names[0]);
+    const { lines } = keyframeLines(track, names, group, dash, report, node.path, layer);
+    animations.push(`${anim} ${duration}s linear${delay} ${repeat}`);
     keyframes.push(`    @keyframes ${anim} {\n${lines.join('\n')}\n    }`);
   }
 
   const origin = node.pivot ? `transform-origin: ${round(node.pivot[0])}px ${round(node.pivot[1])}px;` : '';
   return {
-    rule: `    .${cssClass(node.path)} { ${origin} animation: ${animations.join(', ')}; }`,
+    rule: `    .${cssClass(node.path, layer)} { ${origin} animation: ${animations.join(', ')}; }`,
     keyframes,
   };
 }
@@ -212,7 +261,9 @@ export interface CompileOptions {
   reducedMotion?: boolean;
 }
 
-export function compile(ch: Character, opts: CompileOptions = {}): { svg: string; report: CompileReport } {
+export function compile(
+  ch: Character, opts: CompileOptions = {},
+): { svg: string; report: CompileReport; animated: string[] } {
   const { width, height } = outputSize(ch, opts.width);
   const report: CompileReport = { parts: [] };
 
@@ -220,12 +271,36 @@ export function compile(ch: Character, opts: CompileOptions = {}): { svg: string
   const frames: string[] = [];
   const animated: string[] = [];
 
+  // A film runs its keyframes once and keeps the last one. `forwards` is what
+  // holds it: without it the element snaps back to its unanimated state the
+  // instant the animation ends, which is a wordmark that appears and vanishes.
+  const repeat = ch.once ? '1 forwards' : 'infinite';
+
   for (const node of ch.nodes()) {
-    const e = emitNode(node, ch.duration, report);
-    if (!e) continue;
-    rules.push(e.rule);
-    frames.push(...e.keyframes);
-    animated.push('.' + cssClass(node.path));
+    for (let layer = 0; layer < node.tracks.length; layer++) {
+      const e = emitLayer(node, layer, ch.duration, repeat, report);
+      if (!e) continue;
+      rules.push(e.rule);
+      frames.push(...e.keyframes);
+      animated.push('.' + cssClass(node.path, layer));
+    }
+  }
+
+  const context = renderContext(ch);
+  let morphIndex = 0;
+  for (const { shape } of listShapes(ch)) {
+    if (!shape.morph) continue;
+    const className = `h-morph-${morphIndex}`;
+    const frameName = `kf-morph-${morphIndex++}`;
+    context.morphClasses.set(shape, className);
+    rules.push(`    .${className} { animation: ${frameName} ${ch.duration}s linear ${repeat}; }`);
+    const lines = shape.morph.keys.map((key, i, keys) => {
+      const d = key.d.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const timing = easeSuffix(key.ease, i === keys.length - 1);
+      return `      ${round(key.t * 100, 2)}% { d: path("${d}");${timing} }`;
+    });
+    frames.push(`    @keyframes ${frameName} {\n${lines.join('\n')}\n    }`);
+    animated.push('.' + className);
   }
 
   // transform-box: view-box makes transform-origin absolute in viewBox space,
@@ -237,15 +312,15 @@ export function compile(ch: Character, opts: CompileOptions = {}): { svg: string
       ? `\n    @media (prefers-reduced-motion: reduce) {\n      ${animated.join(', ')} { animation: none; }\n    }`
       : '';
 
-  const style = [baseRule, ...rules, '', ...frames].filter(Boolean).join('\n');
+  const style = [baseRule, ...rules, ...frames].filter(Boolean).join('\n') + reduced;
 
-  const svg = `${svgOpen(ch, width, height)}
-  <title>${ch.name}</title>
-  <style>
-${style}${reduced}
-  </style>
-${nodeSvg(ch.root, new Map(), '  ')}
-</svg>
-`;
-  return { svg, report };
+  const svg = block(
+    svgOpen(ch, width, height),
+    `  <title>${ch.name}</title>`,
+    definitionsSvg(ch, '  ', context),
+    style ? `  <style>\n${style}\n  </style>` : '',
+    nodeSvg(ch.root, new Map(), '  ', undefined, context),
+    '</svg>',
+  ) + '\n';
+  return { svg, report, animated };
 }
