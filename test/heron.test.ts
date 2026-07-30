@@ -166,6 +166,36 @@ test('the reference walk keeps a planted foot at constant ground speed', () => {
   assert.ok(mean < 0, 'a walking character tracks the ground backwards');
 });
 
+test('foot-slip fires on a stance that changes speed, and not on one that does not', () => {
+  // The pair is the point: both scenes plant the foot for the same stretch and
+  // travel the same distance, so anything that fires on both is measuring the
+  // plant rather than the slip. This is the guard on `lint` and `track` agreeing
+  // about what "planted" means, since the stance decision is made from the same
+  // primitives in both.
+  const build = (eased: boolean) => {
+    const scene = character('slip', { viewBox: [0, 0, 300, 120], duration: 1, ground: 100 }, () => {
+      part('foot', { pivot: [0, 0], contact: [50, 100], offstage: true }, () => {
+        circle({ cx: 50, cy: 100, r: 2 });
+      });
+    });
+    scene.part('foot').animate({
+      // Stance for the first 70% tracking left, then a fast swing forward.
+      x: sampled((t) => (t < 0.7
+        ? -120 * (eased ? (t / 0.7) ** 2 : t / 0.7)
+        : -120 + 120 * ((t - 0.7) / 0.3)), 60),
+      y: keys([[0, 0], [0.7, 0], [0.85, -40], [1, 0]]),
+    });
+    return scene;
+  };
+
+  assert.ok(!lint(build(false)).some((f) => f.rule === 'foot-slip'), 'a constant stance is not a slip');
+  const slip = lint(build(true)).find((f) => f.rule === 'foot-slip');
+  assert.ok(slip, 'an accelerating stance is a slip');
+  assert.equal(slip.severity, 'warning');
+  assert.match(slip.detail ?? '', /deviates 88% from the median/);
+  assert.match(slip.detail ?? '', /ground speed is -2.93 units\/sample over 42 planted samples/);
+});
+
 test('offstage is exempt from out-of-view, and only from that', () => {
   // A scrolling background is wider than the frame at every instant by design,
   // as is a character who walks on from the wings. Reporting either drowns the

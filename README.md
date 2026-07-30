@@ -68,6 +68,13 @@ WARN  [foot-slip] body.legNear.thigh.shin.foot
       speed deviates 656% from the median around t=0.95
 ```
 
+It also reports `INFO` findings that are advisory rather than defects — a contact
+point sliding at one speed all cycle, motion that stops dead instead of settling.
+Neither can fail a build, and they read the same measurement pass `heron motion`
+draws, so a diagnostic and the picture that would show it cannot disagree. One
+motion gives one finding however many parts carry it, so a field of fifty
+particles driven by one gesture is one line, not fifty.
+
 ## Does it actually work for an agent?
 
 That was tested rather than assumed. A fresh agent session was given the library

@@ -12,16 +12,10 @@
  * ratio *is* the timing of the walk, and it reads in one row of numbers.
  *
  * This module only measures. It sets no thresholds and names no defects: `lint`
- * is the only judge. The visual sheet reads this pass, and the soft diagnostics
- * are meant to as well.
- *
- * One piece of that is unfinished and worth knowing about: `lint`'s ground checks
- * still detect stance themselves against their own sample grid. The shared
- * primitives below — `longestRun`, `CONTACT_BAND` — are imported by `lint` so the
- * two cannot drift on the details, but the stance decision itself exists in both
- * places. Consolidating it needs `plantedRun` to expose the per-sample deltas and
- * the run in order, which is what `foot-slip` judges and what a boolean mask
- * throws away.
+ * is the only judge. The motion sheet, the variants overlay and the soft
+ * diagnostics all read this one pass, so no two of them can disagree about what
+ * a scene did — including `lint`'s ground checks, which take their stance
+ * decision from `plantedRun` rather than restating it.
  */
 
 import type { Character, Node, Vec2 } from './scene.ts';
@@ -148,6 +142,13 @@ export interface TrackReport {
 
 export interface TrackOptions {
   parts: Array<TrackRequest | string>;
+  /**
+   * A prepared corner map, when the caller already built one.
+   *
+   * `subtreeCorners` hulls every shape in the tree, and a caller that used it to
+   * decide *what* to measure would otherwise pay for it twice.
+   */
+  corners?: Map<string, Vec2[]>;
   /** Extra parts measured only for clearance against the tracked ones. */
   compare?: Array<TrackRequest | string>;
   samples?: number;
@@ -392,9 +393,10 @@ function guardDuration(ch: Character, timeline: Score | CueSheet): void {
  * Longest circular run of `true`, as indices into the original array.
  *
  * Tracked by start and length so the growing run is not copied on every
- * extension. Shared with `lint`'s stance detection so the two agree.
+ * extension. Private: `plantedRun` is the shared primitive now, and exporting
+ * this as well invited a second stance decision built out of the pieces.
  */
-export function longestRun(flags: boolean[]): number[] {
+function longestRun(flags: boolean[]): number[] {
   const n = flags.length;
   let bestStart = 0;
   let bestLen = 0;
@@ -410,28 +412,28 @@ export function longestRun(flags: boolean[]): number[] {
   return Array.from({ length: bestLen }, (_, i) => (bestStart + i) % n);
 }
 
-/**
- * Which samples have the tracked point planted on the ground.
- *
- * Height alone cannot answer this: a swinging foot passes back down through the
- * heights it occupied while planted, so a lowest-point test calls the descent
- * into touchdown "contact" and then measures its speed. Direction settles it — a
- * planted point tracks against the direction of travel while a swinging one
- * reaches with it — and the facing is inferred rather than assumed, because a
- * character walking left is just as valid. `lint`'s ground checks consume this
- * rather than restating it.
- */
-function plantedFlags(points: Vec2[], height: number, cyclic: boolean): boolean[] {
+/** What the stance decision found, for the one caller that judges the stance. */
+export interface PlantedRun {
+  /** True where the tracked point is planted. */
+  flags: boolean[];
+  /** Indices of the longest planted run, in order, treating the cycle as circular. */
+  indices: number[];
+  /** Horizontal step into each sample. Units per sample, not per second. */
+  deltas: number[];
+}
+
+export function plantedRun(points: Vec2[], height: number, cyclic: boolean): PlantedRun {
   const n = points.length;
-  if (n < 4) return points.map(() => false);
   const band = height * CONTACT_BAND;
-  const lowest = Math.max(...points.map((p) => p[1]));
-  const dx = points.map((p, i) => (i === 0 && !cyclic ? 0 : p[0] - points[(i - 1 + n) % n][0]));
-  const low = points.map((p, i) => (p[1] >= lowest - band ? dx[i] : 0));
+  const lowest = points.length ? Math.max(...points.map((p) => p[1])) : 0;
+  const deltas = points.map((p, i) => (i === 0 && !cyclic ? 0 : p[0] - points[(i - 1 + n) % n][0]));
+  if (n < 4) return { flags: points.map(() => false), indices: [], deltas };
+  const low = points.map((p, i) => (p[1] >= lowest - band ? deltas[i] : 0));
   const travel = low.reduce((a, b) => a + b, 0) <= 0 ? -1 : 1;
-  const near = points.map((p, i) => p[1] >= lowest - band && dx[i] * travel >= 0);
-  const run = new Set(longestRun(near));
-  return points.map((_, i) => run.has(i));
+  const near = points.map((p, i) => p[1] >= lowest - band && deltas[i] * travel >= 0);
+  const indices = longestRun(near);
+  const run = new Set(indices);
+  return { flags: points.map((_, i) => run.has(i)), indices, deltas };
 }
 
 function median(values: number[]): number {
@@ -462,12 +464,27 @@ function runsOf(flags: boolean[]): Array<[number, number]> {
  * a sheet that follows three parts across six cues would otherwise pose the same
  * tree two hundred times over.
  */
+/**
+ * Every part worth measuring: it carries motion of its own, and it has a point.
+ *
+ * Lives here rather than in `lint` because it has to agree with `pointOf`'s
+ * fallback chain, and a copy in the caller did not — it required ink, where
+ * `pointOf` also accepts a pivot, so a pivot-only group was excluded from the
+ * diagnostics while being perfectly trackable. Takes the corner map so a caller
+ * that already has one does not walk the shape tree twice.
+ */
+export function trackable(ch: Character, corners = subtreeCorners(ch)): string[] {
+  return ch.nodes()
+    .filter((n) => n.path && n.tracks.length && (n.contact || n.pivot || corners.has(n.path)))
+    .map((n) => n.path);
+}
+
 export function trackParts(ch: Character, o: TrackOptions): TrackReport {
   const requests = o.parts.map(requestOf);
   const compares = (o.compare ?? []).map(requestOf);
   if (!requests.length) throw new Error('heron: tracking needs at least one part');
 
-  const corners = subtreeCorners(ch);
+  const corners = o.corners ?? subtreeCorners(ch);
   const all = [...requests, ...compares].map((request) => {
     const node = resolvePart(ch, request.path);
     return { node, request, ...pointOf(node, request, corners) };
@@ -497,7 +514,7 @@ export function trackParts(ch: Character, o: TrackOptions): TrackReport {
     const role: PartTrack['role'] = index < requests.length ? 'tracked' : 'compare';
     const points = posed.map((p) => p.points[index]);
     const visible = posed.map((p) => p.visible[index]);
-    const planted = plantedFlags(points, ch.viewBox[3], cyclic);
+    const planted = plantedRun(points, ch.viewBox[3], cyclic).flags;
 
     // Statistics are taken run by run, so the chord across a hide/show gap is
     // neither counted as distance nor reported as the largest single-frame jump.

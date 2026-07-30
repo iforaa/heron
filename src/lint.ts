@@ -9,8 +9,10 @@
 import { type Character, CHANNELS } from './scene.ts';
 import { type Frame, evaluate, netPose, sampleFrames } from './timeline.ts';
 import { EPSILON } from './compile.ts';
-import { frameBox, localCorners } from './render.ts';
-import { CONTACT_BAND, longestRun } from './track.ts';
+import { frameBox, localCorners, subtreeCorners } from './render.ts';
+import {
+  type PartTrack, type TrackReport, CONTACT_BAND, plantedRun, trackParts, trackable,
+} from './track.ts';
 
 export interface Finding {
   rule: string;
@@ -18,6 +20,15 @@ export interface Finding {
   part?: string;
   message: string;
   detail?: string;
+  /**
+   * The instant this is about, as a cycle time.
+   *
+   * Carried as a number rather than left inside `detail`, so findings can be
+   * grouped by the event they describe. Comparing rendered sentences instead
+   * looked like it worked and silently failed: two parts reporting one stop
+   * differ in the speeds they print, so one event came back out as two.
+   */
+  at?: number;
 }
 
 const SAMPLES = 60;
@@ -25,9 +36,23 @@ const SAMPLES = 60;
 /** Speed variation permitted while planted before it reads as skating. */
 const SLIP_THRESHOLD = 0.25;
 
-// The contact band and the longest-run scan are shared with the measurement
-// layer, so the two cannot drift apart on the details of what "planted" means.
-// The stance decision itself is still made twice; see `track.ts`'s header.
+// Thresholds for the soft diagnostics. These are the advisory ones, and they are
+// held to `info` for that reason: they say "this is a shape that usually reads
+// badly", not "this is wrong". Nothing below can fail a build, and a scene is
+// free to mean any of it.
+
+/** Peak-to-median below which a whole cycle reads as one constant slide. */
+const FLAT_RATIO = 1.2;
+/** How much of a part's own travel must be left for a stop to count as a stop. */
+const STOP_FRACTION = 0.08;
+/** Travel below this fraction of the viewBox diagonal is not really motion. */
+const MOVES_AT_ALL = 0.02;
+/** How long after a stop a settle's overshoot may arrive, in samples. */
+const OVERSHOOT_SAMPLES = 2.5;
+
+// The contact band and the stance decision both come from the measurement layer,
+// so the two cannot drift apart on what "planted" means. What stays here is the
+// judgement: how much a planted foot may vary before it reads as skating.
 
 export function lint(ch: Character): Finding[] {
   // One pass of frames feeds every rule. Posing the scene per rule, per part,
@@ -41,6 +66,7 @@ export function lint(ch: Character): Finding[] {
     ...swapChecks(ch, frames),
     ...groundChecks(ch, frames),
     ...viewBoxCheck(ch, frames),
+    ...kinematics(ch),
   ];
 }
 
@@ -151,12 +177,9 @@ function groundChecks(ch: Character, frames: Frame[]): Finding[] {
   for (const node of ch.nodes()) {
     if (!node.contact) continue;
 
-    const pts = frames.map((f) => {
-      const [x, y] = f.point(node);
-      return { t: f.t, x, y };
-    });
-
-    const deepest = pts.reduce((m, p) => (p.y > m.y ? p : m));
+    const pts = frames.map((f) => f.point(node));
+    const lowest = pts.reduce((m, p, i) => (p[1] > pts[m][1] ? i : m), 0);
+    const deepest = { y: pts[lowest][1], t: frames[lowest].t };
     if (deepest.y > ground + band) {
       out.push({
         rule: 'ground-penetration',
@@ -178,21 +201,11 @@ function groundChecks(ch: Character, frames: Frame[]): Finding[] {
       continue;
     }
 
-    // Planted needs both tests. Height alone cannot separate stance from the
-    // descent into touchdown, because a swinging foot passes back down through
-    // the same heights it occupied while planted; direction settles it, since a
-    // foot in contact tracks against the direction of travel while a swinging
-    // one reaches with it. Longest run wins, treating the cycle as circular.
-    const dx = pts.map((p, i) => p.x - pts[(i - 1 + SAMPLES) % SAMPLES].x);
-
-    // Which way "backward" is, inferred rather than assumed: a character facing
-    // left is just as valid, and hardcoding a sign would make this rule quietly
-    // stop checking anything instead of failing loudly.
-    const low = pts.map((p, i) => (p.y >= deepest.y - band ? dx[i] : 0));
-    const travel = low.reduce((a, b) => a + b, 0) <= 0 ? -1 : 1;
-    const planted = pts.map((p, i) => p.y >= deepest.y - band && dx[i] * travel >= 0);
-
-    const best = longestRun(planted);
+    // The stance decision itself belongs to the measurement layer, which returns
+    // the run and its per-sample steps rather than a mask — those steps are what
+    // this rule judges. Restating the decision here is how the two came to be
+    // able to disagree about what "planted" means.
+    const { deltas: dx, indices: best } = plantedRun(pts, ch.viewBox[3], true);
 
     // Drop the samples at each end of the run: they straddle touchdown and
     // push-off, where the foot is genuinely accelerating onto or off the
@@ -246,6 +259,160 @@ function viewBoxCheck(ch: Character, frames: Frame[]): Finding[] {
     }
   }
   return [];
+}
+
+/**
+ * The soft diagnostics: shapes of motion that usually read badly.
+ *
+ * Every rule above this one names a defect — something is through the floor, or
+ * the loop jumps. These name a *preference*, so they are all `info` and none of
+ * them can fail a build. They exist because the alternative is that nobody looks:
+ * an agent cannot see that a walk is one flat slide or that a film stops dead, and
+ * the numbers say both immediately.
+ *
+ * They read the same measurement pass the motion sheet and the variants overlay
+ * read, so a diagnostic and the picture that would show it cannot disagree.
+ */
+function kinematics(ch: Character): Finding[] {
+  // One walk of the shape tree, shared with the measurement pass. Asking for the
+  // ink twice — once to decide what is worth measuring, once inside `trackParts`
+  // — cost up to half of everything these rules added on a path-heavy scene.
+  const corners = subtreeCorners(ch);
+  const parts = trackable(ch, corners);
+  if (!parts.length) return [];
+
+  const [, , vw, vh] = ch.viewBox;
+  const floor = Math.hypot(vw, vh) * MOVES_AT_ALL;
+  const report = trackParts(ch, { parts, samples: SAMPLES, corners });
+
+  const out: Finding[] = [];
+  for (const p of report.parts) {
+    if (p.pathLength < floor) continue;
+    // Each rule states its own applicability. A dispatcher that knew which rules
+    // apply to a contact point and which do not would have to be edited every
+    // time a rule is added, and the knowledge would sit away from the reasoning.
+    for (const rule of [flatSpacing, hardStops]) out.push(...rule(p, report));
+  }
+  return coalesce(out);
+}
+
+/**
+ * One motion, one finding.
+ *
+ * A part carries its ancestors' movement, so a single deceleration is measurable
+ * again at every descendant; and a `field` of particles driven by one gesture is
+ * measurable once per particle. Both happened on real scenes: 35 findings for one
+ * `morphThrough` of one field, 30 for another, and a rigged character reporting
+ * one stop at twenty joints. That is not a report anybody reads.
+ *
+ * So findings of the same rule on *related* parts are one event. Related means
+ * either a chain — one part inside another — or siblings under one parent, which
+ * is what a field is. Both are needed and neither subsumes the other: particles
+ * are not inside each other, and a limb is not a sibling of the body it hangs
+ * from. Instants are deliberately not part of the test, because a stagger is one
+ * gesture whose parts stop at eleven different times.
+ */
+function coalesce(findings: Finding[]): Finding[] {
+  const out: Finding[] = [];
+  for (const rule of new Set(findings.map((f) => f.rule))) {
+    const mine = findings.filter((f) => f.rule === rule);
+    const clusters: Finding[][] = [];
+    for (const f of mine) {
+      const near = clusters.find((c) => c.some((g) => related(g.part, f.part)));
+      if (near) near.push(f); else clusters.push([f]);
+    }
+    out.push(...clusters.map(([first, ...rest]) => {
+      if (!rest.length) return first;
+      const at = [first, ...rest].map((f) => f.at).filter((v): v is number => v !== undefined);
+      const span = at.length > 1 && Math.min(...at) !== Math.max(...at)
+        ? ` between t=${Math.min(...at)} and t=${Math.max(...at)}`
+        : ' at the same instant';
+      return {
+        ...first,
+        part: commonPrefix([first, ...rest].map((f) => f.part ?? '')),
+        detail: `${first.detail} — and ${rest.length} more part(s)${span}`,
+      };
+    }));
+  }
+  return out;
+}
+
+/** One part inside the other, or two under the same parent: one gesture either way. */
+function related(a: string | undefined, b: string | undefined): boolean {
+  if (a === undefined || b === undefined) return false;
+  if (a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`)) return true;
+  const parent = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf('.')));
+  return parent(a) !== '' && parent(a) === parent(b);
+}
+
+/** The deepest dotted path containing every one of these, e.g. `cast.mom` for its limbs. */
+function commonPrefix(paths: string[]): string {
+  const split = paths.map((p) => p.split('.'));
+  const head = split[0] ?? [];
+  let n = 0;
+  while (n < head.length && split.every((s) => s[n] === head[n])) n++;
+  return head.slice(0, n).join('.') || (head[0] ?? '');
+}
+
+/**
+ * A contact point that holds one speed for the whole cycle.
+ *
+ * Judged only on parts that declare a contact, because that is where a constant
+ * speed *means* something: a planted foot has to track the ground and a swinging
+ * one has to travel several times faster, so the two phases cannot be the same
+ * number. Elsewhere a constant speed is ordinary — a scrolling backdrop and a
+ * camera travel are both deliberately linear, and reporting them would be noise.
+ */
+function flatSpacing(p: PartTrack): Finding[] {
+  if (p.trackedAt.source !== 'contact') return [];
+  // A median of zero is a part that never moves between samples, not a part that
+  // moves at one speed; `ratio` is 0 there and the message would be nonsense.
+  if (p.speed.median <= 0 || p.speed.ratio >= FLAT_RATIO) return [];
+  return [{
+    rule: 'linear-spacing',
+    severity: 'info',
+    part: p.part,
+    message: 'the contact point moves at one speed all cycle, which reads as sliding rather than stepping',
+    detail: `peak is only ${p.speed.ratio}x the median (${p.speed.median}/s); a walk is usually 3-6x`
+      + ', because the planted foot tracks the ground and the swing has to catch up',
+  }];
+}
+
+/**
+ * Motion that stops dead instead of settling.
+ *
+ * `decelerations` already records only the real slowings — a halving from above
+ * the part's own median. What is left is the harder half: telling a *cut* from a
+ * *settle*, which the timings cannot do, since every entry spans exactly one
+ * sample interval whether the motion eased into rest or hit a wall.
+ *
+ * The discriminator is the physics rather than the clock. Anything with weight
+ * overshoots its stopping point and comes back, so a settle leaves a direction
+ * reversal just after it and a cut leaves none. That signal is already measured,
+ * and it does not need a threshold of its own.
+ *
+ * Not asked of contact points: a foot landing stops dead because the ground
+ * stopped it, which is correct physics rather than a missing settle.
+ */
+function hardStops(p: PartTrack, report: TrackReport): Finding[] {
+  if (p.trackedAt.source === 'contact') return [];
+  const reversals = [...p.reversals.x, ...p.reversals.y];
+  // The overshoot follows the stop, so the window is one-sided. Derived from the
+  // report's own grid rather than from the raw sample array, so it stays right if
+  // a window narrower than the whole cycle is ever measured.
+  const step = (report.window.to - report.window.from) / report.samples;
+  const stop = p.decelerations.find((d) => d.to <= p.speed.median * STOP_FRACTION
+    && !reversals.some((r) => r >= d.at - step && r <= d.at + OVERSHOOT_SAMPLES * step));
+  if (!stop) return [];
+  return [{
+    rule: 'abrupt-stop',
+    severity: 'info',
+    part: p.part,
+    at: stop.at,
+    message: 'motion stops dead rather than settling, which reads as the animation being cut off',
+    detail: `${stop.from}/s to ${stop.to}/s at t=${stop.at}, with no overshoot after it`
+      + '; anything with weight passes its stopping point and comes back',
+  }];
 }
 
 export function formatFindings(findings: Finding[]): string {

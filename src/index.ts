@@ -107,14 +107,14 @@ export type { ShapeRef, NodeSvgOptions, VariantCell } from './render.ts';
 export type { Box, RenderOptions, CueFrame, CueSheetRenderOptions } from './render.ts';
 
 export {
-  trackParts, resolvePart, resolveWindow, windowTimes, formatTrackReport, partLine,
-  boxGap, longestRun, CONTACT_BAND,
+  trackParts, trackable, resolvePart, resolveWindow, windowTimes, formatTrackReport,
+  partLine, boxGap, plantedRun, CONTACT_BAND,
 } from './track.ts';
 export { grid, VariantSet, MAX_BUILDS } from './variants.ts';
 export type { Axes, AxisValues, Variant, VariantMeta } from './variants.ts';
 export type {
   TrackWindow, TrackRequest, TrackedSample, TrackOptions, TrackReport, PartTrack,
-  Hold, Deceleration, Clearance,
+  Hold, Deceleration, Clearance, PlantedRun,
 } from './track.ts';
 export { compile, keyframeName, EPSILON } from './compile.ts';
 export type { CompileReport, CompileOptions } from './compile.ts';

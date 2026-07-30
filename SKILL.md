@@ -589,6 +589,45 @@ Notes that matter:
 
 Then write the chosen number into the scene with a comment saying what it beat.
 
+### Two things lint mentions but will not fail you on
+
+Alongside the errors and warnings, `lint` reports `INFO` findings. These are not
+defects — they are shapes of motion that usually read badly, and a scene is free
+to mean either of them. Neither can fail a build.
+
+- **`linear-spacing`** — a contact point that holds one speed all cycle. Asked
+  only of parts with a `contact`, because that is where constant speed *means*
+  something: the planted foot must track the ground and the swing must catch up,
+  so a ratio near 1.0 is a foot sliding rather than stepping. A camera travel or
+  a scrolling backdrop is deliberately linear and is never reported.
+- **`abrupt-stop`** — motion that stops dead instead of settling. The timings
+  cannot tell a cut from a settle, so this reads the physics instead: anything
+  with weight passes its stopping point and comes back, so a settle leaves a
+  direction reversal just after the stop and a cut leaves none. Contact points
+  are exempt — a foot landing stops dead because the ground stopped it.
+
+**One motion is one finding.** A part carries its ancestors' movement, and a field
+of particles carries one gesture, so the same event is measurable at twenty joints
+or fifty particles. Related parts reporting the same rule — one inside another, or
+siblings under one parent — are stated once, named by the part that contains them
+all. Instants are not part of that test: a stagger is one gesture whose parts stop
+at a dozen different times.
+
+### Two things to judge yourself, because lint cannot
+
+These were tried as rules and removed, because the measurement does not support
+them. They are still worth knowing:
+
+- **Give a film somewhere to rest.** A scene in which nothing is ever still reads
+  as floating. This cannot be a lint: whether a brief rest counts as a hold
+  depends on how densely you sample, and the answer flips between sample counts
+  the author never sees. Check it with `heron motion --cues` and read the holds.
+- **Uneven beats are what timing looks like.** Cues that are all the same length
+  read as a slideshow rather than as a plan. There is no threshold behind this —
+  three cues at 2/2/2s and at 2/2/2.05s are not meaningfully different scenes —
+  so it belongs in your judgement when you write the `score()`, not in a report
+  afterwards.
+
 ## 5. Fix what lint reports
 
 - **loop-seam** — a channel ends somewhere other than where it started, so the
