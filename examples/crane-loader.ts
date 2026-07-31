@@ -11,7 +11,7 @@
  */
 
 import {
-  arc, character, keys, linear, part, type Character,
+  applyGait, arc, bodyBob, character, keys, linear, part, walkCycle, type Character,
 } from '../src/index.ts';
 import {
   BIRD, GROUND, SEGMENTS, craneRig, offsetFarLeg,
@@ -66,5 +66,43 @@ craneLoader.part('bird').animate({
 });
 
 offsetFarLeg(craneLoader);
+
+// --- the run -----------------------------------------------------------------
+// Stance below 0.5 is what makes it a run: the two stance phases stop
+// overlapping and the gap between them is a flight phase. Values start from
+// crane-stairs' proven run gait for this same rig.
+
+const STANCE = 0.38;
+const REACH = 30;
+
+const gait = walkCycle({
+  stance: STANCE,
+  reach: REACH,
+  // The beak points left, so the bird runs left. facing: 1 here is the
+  // documented moonwalk artifact — do not "fix" it.
+  facing: -1,
+  segments: SEGMENTS,
+  clearance: 90,
+  // A running leg lands bent and absorbs, where a walking leg lands locked.
+  stanceKnee: 15,
+  kneeBreak: 62,
+  toeTuck: -46,
+});
+
+applyGait(craneLoader, 'legNear', gait);
+applyGait(craneLoader, 'legFar', gait, 0.5);
+
+craneLoader.part('body').animate(
+  bodyBob({ stance: STANCE, legLength: SEGMENTS[0] + SEGMENTS[1], reach: REACH }),
+);
+
+// A runner leans in; a few constant degrees on the neck is the whole
+// difference between running and walking fast. Sign checked on the sheet —
+// the lean must go toward the beak.
+craneLoader.part('neck').animate({ rotate: keys([[0, -8], [1, -8]]) });
+
+// One exact revolution per loop, linear, so the seam is invisible and the
+// spin reads as the same mechanism as the run.
+craneLoader.part('spinner').animate({ rotate: keys([[0, 0], [1, -360]], linear) });
 
 export default craneLoader;
