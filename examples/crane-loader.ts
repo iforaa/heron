@@ -27,7 +27,9 @@ const INNER = RING.r - RING.width / 2;
 /**
  * The bird, scaled to fit its whole stride inside the ring's inner edge.
  * `BIRD` is the rig's published ink bounds over a full stride; the diagonal
- * fit is conservative (no ink reaches the box corners), so FIT relaxes it.
+ * fit is a starting heuristic — with the bottom-anchored placement it is not
+ * a strict geometric bound, so the frame sheet confirms the fit; FIT relaxes
+ * it if the bird reads small.
  * Tuned on the frame sheet: raise FIT until ink approaches the ring, back
  * off one notch.
  */
@@ -78,8 +80,9 @@ const REACH = 30;
 const gait = walkCycle({
   stance: STANCE,
   reach: REACH,
-  // The beak points left, so the bird runs left. facing: 1 here is the
-  // documented moonwalk artifact — do not "fix" it.
+  // The beak points left, so the bird runs left. Setting facing to 1 here
+  // would produce the documented moonwalk artifact — do not "fix" -1 back
+  // to the default.
   facing: -1,
   segments: SEGMENTS,
   clearance: 90,

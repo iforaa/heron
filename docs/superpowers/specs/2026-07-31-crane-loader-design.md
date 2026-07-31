@@ -76,7 +76,13 @@ example.
 
 ## Verification
 
-- `lint()` on the character passes.
+- `lint()` on the character passes, with two adjudicated false positives
+  accepted: a `[loop-seam]` error on the spinner (rotate runs 0 → −360, a
+  full revolution — visually identical at the seam; the linter compares raw
+  values with no modular-rotation handling) and an `[out-of-view]` warning
+  (an arc rotating about its own circle's centre stays on that circle; the
+  linter rotates the arc's axis-aligned bounding box, whose corners swing
+  wider). A mod-360 loop-seam linter improvement is filed as follow-up work.
 - `compileLottie`'s report returns zero warnings.
 - A rendered frame sheet (`renderSheet`) for visual inspection of the gait.
 - Play the emitted JSON in the app (or a Lottie preview) to confirm the loop
