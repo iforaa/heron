@@ -80,14 +80,14 @@ const FOOT_PAD = 'M 471 935 c -23 5 -32 8 -37 14 -8 7 0 15 19 20 8 3 28 6 33 6 2
  * matrix do it removes that assumption, and it carries the pivots and the
  * contact point along for free.
  */
-function leg(name: string, tint: string): void {
+function leg(name: string, tint: string, weight = 1): void {
   part(name, () => {
     part('thigh', { pivot: HIP }, () => {
-      ribbon(THIGH_P, THIGH_W, { fill: tint });
+      ribbon(THIGH_P, weighted(THIGH_W, weight), { fill: tint });
       part('shin', { pivot: KNEE }, () => {
-        ribbon(SHIN_P, SHIN_W, { fill: tint });
+        ribbon(SHIN_P, weighted(SHIN_W, weight), { fill: tint });
         part('foot', { pivot: ANKLE, contact: [ANKLE[0], GROUND] }, () => {
-          ribbon(FOOT_P, FOOT_W, { fill: tint });
+          ribbon(FOOT_P, weighted(FOOT_W, weight), { fill: tint });
           path({ d: FOOT_PAD, fill: tint });
         });
       });
@@ -95,16 +95,25 @@ function leg(name: string, tint: string): void {
   });
 }
 
+/** The measured widths, optionally thickened: a bird redrawn at reduced scale
+ *  reads thin beside full-size ink, and `weight` is the pen pressure that
+ *  compensates. 1 leaves the measurements untouched. */
+function weighted(ws: number[], weight: number): number[] {
+  return weight === 1 ? ws : ws.map((v) => v * weight);
+}
+
 /**
  * Declares the whole bird into the surrounding `character()`: a `body` holding
  * both legs, the torso, a hinged wing, and a neck carrying the head.
  */
-export function craneRig(palette: { ink?: string; far?: string } = {}): void {
+export function craneRig(palette: { ink?: string; far?: string; weight?: number } = {}): void {
   const ink = palette.ink ?? INK;
   const far = palette.far ?? FAR;
+  const weight = palette.weight ?? 1;
+  const w = (ws: number[]) => weighted(ws, weight);
   part('body', { pivot: [500, 470] }, () => {
     // Behind the torso, so it reads as the far side.
-    leg('legFar', far);
+    leg('legFar', far, weight);
 
     ribbon([
       [363.4, 378.1], [364.9, 378.2], [367, 378.1], [371.6, 377.7], [374.6, 377.2], [378.9, 376.2],
@@ -115,7 +124,7 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
       [527.7, 362.5], [536.6, 366.8], [540.9, 369.1], [554.8, 377.3], [582.8, 398.2], [610.9, 425.1],
       [630.9, 448], [646.9, 469.1], [672.1, 508.9], [689.2, 542.3], [707.1, 584.5], [712.1, 598.5],
       [716, 611.6],
-    ], [
+    ], w([
       22.9, 22.1, 21.1, 19.4, 18.7, 18,
       17.7, 17.7, 17.7, 17.8, 18.1, 18,
       17.9, 17.9, 17.9, 17.9, 17.9, 18,
@@ -124,7 +133,7 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
       18.2, 18.2, 18.2, 18.2, 18.2, 18.2,
       18.1, 18.1, 18.2, 17.9, 18.1, 18.1,
       18.3,
-    ], { fill: ink });
+    ]), { fill: ink });
 
     ribbon([
       [302.3, 410.9], [302.6, 414.2], [305.9, 433], [312.5, 452.8], [324.5, 475.6], [337.7, 493.2],
@@ -133,14 +142,14 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
       [495.3, 575], [496.1, 575.2], [497.4, 575.5], [499.1, 575.9], [501.2, 576.3], [502.3, 576.6],
       [505.2, 577.1], [507.2, 577.5], [511.2, 578.1], [518.6, 578.6], [519.7, 578.7], [525.3, 578.4],
       [534.3, 576.6], [542.6, 573.7], [542.8, 573.6], [543.1, 573.6], [540.7, 575],
-    ], [
+    ], w([
       18.1, 18.1, 18.2, 18.2, 18.2, 18.2,
       18.2, 18.2, 18.2, 18.1, 18.1, 18.1,
       18.2, 18.3, 18.5, 17.9, 17.6, 17.4,
       17.3, 17.3, 17.3, 17.3, 17.3, 17.3,
       17.4, 17.6, 17.9, 19.1, 19.3, 20.7,
       23.7, 26.8, 26.8, 26.6, 24.2,
-    ], { fill: ink });
+    ]), { fill: ink });
 
     // The folded wing, given a pivot at its root so it can flap. In the mark
     // it is one static stroke down the flank; the joint is the only thing
@@ -155,7 +164,7 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
         [596.4, 578.4], [599.3, 578.8], [603.1, 579.4], [604.4, 579.6], [610.9, 580.5], [612.2, 580.7],
         [613.4, 580.9], [617.9, 581.4], [619.2, 581.6], [629.7, 582.5], [630.8, 582.6], [632.8, 582.7],
         [639, 583.2], [652.8, 584.2],
-      ], [
+      ], w([
         18, 18.1, 18.3, 18.3, 18.2, 18.2,
         18.3, 17.5, 20, 21.9, 22.3, 24.1,
         24.9, 26.5, 27.9, 28.5, 29, 29.9,
@@ -164,7 +173,7 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
         26.1, 25.7, 25.2, 25, 24.3, 24.1,
         24, 23.4, 23.3, 22, 21.8, 21.5,
         20.7, 18.6,
-      ], { fill: ink });
+      ]), { fill: ink });
     });
 
     part('neck', { pivot: [340, 396] }, () => {
@@ -173,20 +182,20 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
         [362, 342.3], [360.8, 345.9], [360.1, 348.7], [359.3, 351.4], [358.9, 353.1], [358.5, 355.1],
         [357.8, 359.5], [357.6, 361.1], [357.5, 368.2], [357.7, 369.5], [358, 371.2], [359, 374.5],
         [360, 376.7], [360.5, 377.7], [361.3, 378.9], [362.5, 380.6],
-      ], [
+      ], w([
         17.8, 17.8, 18, 17.9, 17.8, 17.6,
         17.5, 17.5, 17.5, 17.5, 17.6, 17.6,
         17.9, 18, 19.2, 19.5, 20, 21.2,
         22.3, 22.8, 23.6, 24.7,
-      ], { fill: ink });
+      ]), { fill: ink });
 
       ribbon([
         [377.1, 225.1], [342.8, 276.7], [330.7, 297.4], [317.9, 324.4], [308, 353.3], [302.8, 380.9],
         [302.4, 384.1], [301.8, 398], [302.3, 410.9], [302.6, 414.2], [305.9, 433],
-      ], [
+      ], w([
         18, 17.9, 17.8, 17.9, 17.8, 17.9,
         17.9, 18, 18.1, 18.1, 18.2,
-      ], { fill: ink });
+      ]), { fill: ink });
 
       part('head', { pivot: [402, 223] }, () => {
         ribbon([
@@ -200,7 +209,7 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
           [437.7, 174.5], [437.8, 176.1], [437.8, 179], [437.7, 180.5], [437.2, 187.9], [437, 189.5],
           [436.5, 193.2], [436.1, 195.1], [435.9, 196.6], [435.3, 199.4], [434.8, 201.4], [434, 204.6],
           [433.3, 207.2], [428.9, 220.1], [428.4, 221.3], [414.8, 249.2], [376.7, 310.8],
-        ], [
+        ], w([
           18.8, 19.7, 20.3, 20.7, 21.2, 21.4,
           21.7, 21.9, 22.4, 22.7, 23, 23.2,
           23.7, 24, 27.2, 28.3, 28.1, 27.5,
@@ -211,7 +220,7 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
           17.9, 17.9, 17.8, 17.8, 17.8, 17.8,
           17.8, 17.8, 17.8, 17.8, 17.8, 17.8,
           17.8, 17.8, 17.8, 17.8, 18,
-        ], { fill: ink });
+        ]), { fill: ink });
 
         ribbon([
           [338, 112.4], [338.5, 115.6], [338.7, 117.1], [339, 119.2], [340.4, 126.9], [341.1, 129.8],
@@ -219,17 +228,17 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
           [380.1, 178.1], [382.9, 181.9], [383.9, 183.5], [385.1, 186.1], [386.4, 190.7], [386.8, 193.3],
           [386.8, 194.6], [386.7, 199.1], [386.6, 200.4], [386.3, 202.1], [386.1, 203.4], [385.7, 205.1],
           [384.6, 209.2], [382.3, 215], [377.1, 225.1], [342.8, 276.7], [330.7, 297.4],
-        ], [
+        ], w([
           29.7, 26.9, 25.7, 24.3, 20.5, 19.6,
           18.7, 18.2, 18.2, 18.1, 18.3, 18.8,
           18.5, 18.4, 18.3, 18.2, 18.1, 18,
           18, 17.9, 17.9, 17.9, 17.9, 17.8,
           17.8, 17.9, 18, 17.9, 17.8,
-        ], { fill: ink });
+        ]), { fill: ink });
       });
     });
 
-    leg('legNear', ink);
+    leg('legNear', ink, weight);
   });
 }
 

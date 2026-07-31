@@ -39,8 +39,12 @@ const SCALE = (2 * INNER * FIT) / Math.hypot(BIRD.x1 - BIRD.x0, BIRD.y1 - BIRD.y
 /** Scaled about the ground point under the bird's centre, then translated so
  *  that point lands just above the ring's inner bottom edge. */
 const ANCHOR: [number, number] = [(BIRD.x0 + BIRD.x1) / 2, GROUND];
-const MARGIN = 40;
+const MARGIN = 85;
 const FLOOR_Y = RING.cy + INNER - MARGIN;
+
+/** The rig's measured widths are drawn for a full-frame bird; at SCALE they
+ *  read thin beside the full-size ring, so the pen presses a little harder. */
+const WEIGHT = 1.25;
 
 const DURATION = 0.8;
 
@@ -53,7 +57,7 @@ export const craneLoader: Character = character(
       arc({ cx: 512.9, cy: 427.9, r: 359, from: -129.9, to: -248.6, stroke: INK, width: RING.width });
     });
     part('bird', { pivot: ANCHOR }, () => {
-      craneRig({ ink: INK, far: FAR });
+      craneRig({ ink: INK, far: FAR, weight: WEIGHT });
     });
   },
 );
