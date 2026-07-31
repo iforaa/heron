@@ -186,7 +186,7 @@ export function craneRig(palette: { ink?: string; far?: string } = {}): void {
       ], [
         18, 17.9, 17.8, 17.9, 17.8, 17.9,
         17.9, 18, 18.1, 18.1, 18.2,
-      ], { fill: INK });
+      ], { fill: ink });
 
       part('head', { pivot: [402, 223] }, () => {
         ribbon([
