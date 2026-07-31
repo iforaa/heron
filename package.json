@@ -1,7 +1,7 @@
 {
   "name": "@heron/core",
   "version": "0.1.0",
-  "description": "Compile character animation code into a self-contained animated SVG. Built for agents.",
+  "description": "Author character animation in code and compile it for SVG, Lottie or video. Built for agents.",
   "type": "module",
   "bin": {
     "heron": "./src/cli.ts"
@@ -13,7 +13,8 @@
     "test": "node --test test/*.test.ts",
     "crane": "node src/cli.ts build examples/crane.ts -o out/crane.svg",
     "stairs": "node src/cli.ts build examples/crane-stairs.ts -o out/crane-stairs.svg -w 1400",
-    "family": "node src/cli.ts build examples/crane-family.ts -o out/crane-family.svg -w 1500"
+    "family": "node src/cli.ts build examples/crane-family.ts -o out/crane-family.svg -w 1500",
+    "loader": "node src/cli.ts build examples/crane-loader.ts -o out/crane-loader.svg && node src/cli.ts lottie examples/crane-loader.ts -o out/crane-loader.json --fps 60"
   },
   "license": "MIT",
   "dependencies": {
