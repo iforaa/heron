@@ -99,10 +99,12 @@ function leg(name: string, tint: string): void {
  * Declares the whole bird into the surrounding `character()`: a `body` holding
  * both legs, the torso, a hinged wing, and a neck carrying the head.
  */
-export function craneRig(): void {
+export function craneRig(palette: { ink?: string; far?: string } = {}): void {
+  const ink = palette.ink ?? INK;
+  const far = palette.far ?? FAR;
   part('body', { pivot: [500, 470] }, () => {
     // Behind the torso, so it reads as the far side.
-    leg('legFar', FAR);
+    leg('legFar', far);
 
     ribbon([
       [363.4, 378.1], [364.9, 378.2], [367, 378.1], [371.6, 377.7], [374.6, 377.2], [378.9, 376.2],
@@ -122,7 +124,7 @@ export function craneRig(): void {
       18.2, 18.2, 18.2, 18.2, 18.2, 18.2,
       18.1, 18.1, 18.2, 17.9, 18.1, 18.1,
       18.3,
-    ], { fill: INK });
+    ], { fill: ink });
 
     ribbon([
       [302.3, 410.9], [302.6, 414.2], [305.9, 433], [312.5, 452.8], [324.5, 475.6], [337.7, 493.2],
@@ -138,7 +140,7 @@ export function craneRig(): void {
       17.3, 17.3, 17.3, 17.3, 17.3, 17.3,
       17.4, 17.6, 17.9, 19.1, 19.3, 20.7,
       23.7, 26.8, 26.8, 26.6, 24.2,
-    ], { fill: INK });
+    ], { fill: ink });
 
     // The folded wing, given a pivot at its root so it can flap. In the mark
     // it is one static stroke down the flank; the joint is the only thing
@@ -162,7 +164,7 @@ export function craneRig(): void {
         26.1, 25.7, 25.2, 25, 24.3, 24.1,
         24, 23.4, 23.3, 22, 21.8, 21.5,
         20.7, 18.6,
-      ], { fill: INK });
+      ], { fill: ink });
     });
 
     part('neck', { pivot: [340, 396] }, () => {
@@ -176,7 +178,7 @@ export function craneRig(): void {
         17.5, 17.5, 17.5, 17.5, 17.6, 17.6,
         17.9, 18, 19.2, 19.5, 20, 21.2,
         22.3, 22.8, 23.6, 24.7,
-      ], { fill: INK });
+      ], { fill: ink });
 
       ribbon([
         [377.1, 225.1], [342.8, 276.7], [330.7, 297.4], [317.9, 324.4], [308, 353.3], [302.8, 380.9],
@@ -209,7 +211,7 @@ export function craneRig(): void {
           17.9, 17.9, 17.8, 17.8, 17.8, 17.8,
           17.8, 17.8, 17.8, 17.8, 17.8, 17.8,
           17.8, 17.8, 17.8, 17.8, 18,
-        ], { fill: INK });
+        ], { fill: ink });
 
         ribbon([
           [338, 112.4], [338.5, 115.6], [338.7, 117.1], [339, 119.2], [340.4, 126.9], [341.1, 129.8],
@@ -223,11 +225,11 @@ export function craneRig(): void {
           18.5, 18.4, 18.3, 18.2, 18.1, 18,
           18, 17.9, 17.9, 17.9, 17.9, 17.8,
           17.8, 17.9, 18, 17.9, 17.8,
-        ], { fill: INK });
+        ], { fill: ink });
       });
     });
 
-    leg('legNear', INK);
+    leg('legNear', ink);
   });
 }
 
