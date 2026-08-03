@@ -1,0 +1,798 @@
+{
+  "scene": "craneGolf",
+  "duration": 5.2,
+  "samples": 60,
+  "endpoints": "inclusive",
+  "window": {
+    "kind": "cycle",
+    "from": 0,
+    "to": 1,
+    "seconds": 5.2
+  },
+  "parts": [
+    {
+      "part": "bird.club",
+      "role": "tracked",
+      "trackedAt": {
+        "source": "explicit",
+        "local": [
+          427,
+          905
+        ]
+      },
+      "pathLength": 1039.33,
+      "speed": {
+        "median": 43.31,
+        "peak": 1431.49,
+        "ratio": 33.05
+      },
+      "holds": [
+        {
+          "from": 0.1356,
+          "to": 0.1356,
+          "seconds": 0.088
+        },
+        {
+          "from": 0.3559,
+          "to": 0.3729,
+          "seconds": 0.176
+        },
+        {
+          "from": 0.6271,
+          "to": 0.7458,
+          "seconds": 0.705
+        },
+        {
+          "from": 0.8814,
+          "to": 1,
+          "seconds": 0.705
+        }
+      ],
+      "reversals": {
+        "x": [
+          0.0678,
+          0.1356
+        ],
+        "y": [
+          0.0678,
+          0.1356,
+          0.2881,
+          0.3898,
+          0.5254
+        ]
+      },
+      "decelerations": [
+        {
+          "at": 0.0678,
+          "from": 58.59,
+          "to": 19.5,
+          "overSeconds": 0.0881
+        },
+        {
+          "at": 0.1356,
+          "from": 79.54,
+          "to": 1.35,
+          "overSeconds": 0.0881
+        },
+        {
+          "at": 0.322,
+          "from": 287.42,
+          "to": 121.61,
+          "overSeconds": 0.0881
+        },
+        {
+          "at": 0.339,
+          "from": 121.61,
+          "to": 6.09,
+          "overSeconds": 0.0881
+        },
+        {
+          "at": 0.4576,
+          "from": 1404.17,
+          "to": 657.55,
+          "overSeconds": 0.0881
+        },
+        {
+          "at": 0.4746,
+          "from": 657.55,
+          "to": 251.66,
+          "overSeconds": 0.0881
+        },
+        {
+          "at": 0.5254,
+          "from": 106.69,
+          "to": 7.55,
+          "overSeconds": 0.0881
+        },
+        {
+          "at": 0.8644,
+          "from": 345.93,
+          "to": 69.35,
+          "overSeconds": 0.0881
+        },
+        {
+          "at": 0.8814,
+          "from": 69.35,
+          "to": 0,
+          "overSeconds": 0.0881
+        }
+      ],
+      "largestJump": {
+        "at": 0.4237,
+        "delta": 126.17
+      },
+      "bounds": {
+        "x0": 216.1734550905624,
+        "y0": 455.7825332404217,
+        "x1": 791.8779804859225,
+        "y1": 999.821611530698
+      },
+      "invisible": [],
+      "runs": 1,
+      "dropped": 0,
+      "clearance": {},
+      "samples": [
+        {
+          "t": 0,
+          "seconds": 0,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": true,
+          "planted": false
+        },
+        {
+          "t": 0.0169,
+          "seconds": 0.088,
+          "point": [
+            428.55,
+            905.97
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.0339,
+          "seconds": 0.176,
+          "point": [
+            433.01,
+            908.71
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.0508,
+          "seconds": 0.264,
+          "point": [
+            437.45,
+            911.34
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.0678,
+          "seconds": 0.353,
+          "point": [
+            438.94,
+            912.2
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.0847,
+          "seconds": 0.441,
+          "point": [
+            435.27,
+            910.06
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.1017,
+          "seconds": 0.529,
+          "point": [
+            426.31,
+            904.56
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.1186,
+          "seconds": 0.617,
+          "point": [
+            420.44,
+            900.73
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.1356,
+          "seconds": 0.705,
+          "point": [
+            420.34,
+            900.66
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.1525,
+          "seconds": 0.793,
+          "point": [
+            422.41,
+            902.04
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.1695,
+          "seconds": 0.881,
+          "point": [
+            425.31,
+            903.92
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.1864,
+          "seconds": 0.969,
+          "point": [
+            426.89,
+            904.93
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.2034,
+          "seconds": 1.058,
+          "point": [
+            429.38,
+            906.49
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.2203,
+          "seconds": 1.146,
+          "point": [
+            443.17,
+            914.59
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.2373,
+          "seconds": 1.234,
+          "point": [
+            470.58,
+            928.09
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.2542,
+          "seconds": 1.322,
+          "point": [
+            510.15,
+            942.28
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": true
+        },
+        {
+          "t": 0.2712,
+          "seconds": 1.41,
+          "point": [
+            554.51,
+            951.62
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": true
+        },
+        {
+          "t": 0.2881,
+          "seconds": 1.498,
+          "point": [
+            592.94,
+            954.55
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": true
+        },
+        {
+          "t": 0.3051,
+          "seconds": 1.586,
+          "point": [
+            618.26,
+            953.95
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": true
+        },
+        {
+          "t": 0.322,
+          "seconds": 1.675,
+          "point": [
+            628.94,
+            953.09
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": true
+        },
+        {
+          "t": 0.339,
+          "seconds": 1.763,
+          "point": [
+            629.48,
+            953.04
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": true
+        },
+        {
+          "t": 0.3559,
+          "seconds": 1.851,
+          "point": [
+            629.48,
+            953.04
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": true
+        },
+        {
+          "t": 0.3729,
+          "seconds": 1.939,
+          "point": [
+            629.48,
+            953.04
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": true
+        },
+        {
+          "t": 0.3898,
+          "seconds": 2.027,
+          "point": [
+            593.36,
+            954.56
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.4068,
+          "seconds": 2.115,
+          "point": [
+            499.04,
+            938.89
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.4237,
+          "seconds": 2.203,
+          "point": [
+            389.14,
+            876.91
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.4407,
+          "seconds": 2.292,
+          "point": [
+            312.9,
+            779.43
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.4576,
+          "seconds": 2.38,
+          "point": [
+            291.51,
+            725.57
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.4746,
+          "seconds": 2.468,
+          "point": [
+            285.96,
+            704.09
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.4915,
+          "seconds": 2.556,
+          "point": [
+            282.75,
+            687.49
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.5085,
+          "seconds": 2.644,
+          "point": [
+            281.34,
+            678.19
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.5254,
+          "seconds": 2.732,
+          "point": [
+            280.69,
+            678.03
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.5424,
+          "seconds": 2.82,
+          "point": [
+            277.87,
+            680.42
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.5593,
+          "seconds": 2.908,
+          "point": [
+            273.13,
+            684.56
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.5763,
+          "seconds": 2.997,
+          "point": [
+            268.42,
+            688.82
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.5932,
+          "seconds": 3.085,
+          "point": [
+            265.63,
+            691.42
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.6102,
+          "seconds": 3.173,
+          "point": [
+            265.04,
+            691.97
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.6271,
+          "seconds": 3.261,
+          "point": [
+            265.04,
+            691.97
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.6441,
+          "seconds": 3.349,
+          "point": [
+            265.04,
+            691.97
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.661,
+          "seconds": 3.437,
+          "point": [
+            265.04,
+            691.97
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.678,
+          "seconds": 3.525,
+          "point": [
+            265.04,
+            691.97
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.6949,
+          "seconds": 3.614,
+          "point": [
+            265.04,
+            691.97
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.7119,
+          "seconds": 3.702,
+          "point": [
+            265.04,
+            691.97
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.7288,
+          "seconds": 3.79,
+          "point": [
+            265.04,
+            691.97
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.7458,
+          "seconds": 3.878,
+          "point": [
+            265.07,
+            692.06
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.7627,
+          "seconds": 3.966,
+          "point": [
+            268.92,
+            705.3
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.7797,
+          "seconds": 4.054,
+          "point": [
+            282.67,
+            741.82
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.7966,
+          "seconds": 4.142,
+          "point": [
+            312.09,
+            795.37
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.8136,
+          "seconds": 4.231,
+          "point": [
+            355.18,
+            848.29
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.8305,
+          "seconds": 4.319,
+          "point": [
+            396.66,
+            884.53
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.8475,
+          "seconds": 4.407,
+          "point": [
+            421.8,
+            901.79
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.8644,
+          "seconds": 4.495,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.8814,
+          "seconds": 4.583,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.8983,
+          "seconds": 4.671,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.9153,
+          "seconds": 4.759,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.9322,
+          "seconds": 4.847,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.9492,
+          "seconds": 4.936,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.9661,
+          "seconds": 5.024,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 0.9831,
+          "seconds": 5.112,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": false,
+          "planted": false
+        },
+        {
+          "t": 1,
+          "seconds": 5.2,
+          "point": [
+            427,
+            905
+          ],
+          "visible": true,
+          "boundary": true,
+          "planted": false
+        }
+      ]
+    }
+  ]
+}

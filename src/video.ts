@@ -11,7 +11,10 @@ import { dirname, resolve } from 'node:path';
 import { Resvg } from '@resvg/resvg-js';
 
 import type { Character } from './scene.ts';
+import { playbackTimes } from './delivery.ts';
 import { outputSize, renderContext, renderStatic } from './render.ts';
+
+export { playbackTimes } from './delivery.ts';
 
 export interface VideoOptions {
   width?: number;
@@ -92,8 +95,7 @@ export async function renderVideo(
   const width = Math.round(o.width ?? ch.viewBox[2]);
   const codec = o.codec ?? 'h264';
   const crf = o.crf ?? 18;
-  if (!Number.isFinite(fps) || fps <= 0) throw new Error('heron: video fps must be greater than zero');
-  if (!Number.isInteger(fps) || fps > 240) throw new Error('heron: video fps must be an integer no greater than 240');
+  const times = playbackTimes(ch.duration, fps);
   if (!Number.isFinite(width) || width <= 0) throw new Error('heron: video width must be greater than zero');
   if (!(codec in CODECS)) throw new Error(`heron: video codec must be h264, h265 or vp9, got ${codec}`);
   if (!Number.isInteger(crf) || crf < 0 || crf > 63) throw new Error('heron: video crf must be an integer from 0 to 63');
@@ -102,7 +104,7 @@ export async function renderVideo(
   if (!hasFfmpeg(ffmpeg)) throw new Error(`heron: cannot run ${ffmpeg}; install ffmpeg or pass its path`);
 
   const { height } = outputSize(ch, width);
-  const frames = Math.max(1, Math.round(ch.duration * fps));
+  const frames = times.length;
   const target = resolve(file);
   mkdirSync(dirname(target), { recursive: true });
   const args = videoArgs(width, height, ch.duration, target, { fps, codec, crf, audio: o.audio });
@@ -136,8 +138,7 @@ export async function renderVideo(
   // The shape-reuse pass and definitions are frame-invariant; build them once
   // rather than once per frame.
   const context = renderContext(ch);
-  for (let i = 0; i < frames; i++) {
-    const t = i / frames;
+  for (const t of times) {
     const svg = renderStatic(ch, t, { width, context });
     const image = new Resvg(svg, {
       fitTo: { mode: 'width', value: width },

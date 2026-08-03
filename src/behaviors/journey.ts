@@ -332,7 +332,10 @@ export function journey(ch: Character, o: JourneyOptions): Journey {
   const stand = o.stance / 2;
   // Sampled fine enough to resolve the fastest stride in the journey, which is
   // the one that would alias first.
-  const period = stride / Math.max(...moves.map((m) => m.cruise));
+  // Facing can make stride signed; cadence is a duration and cannot be. Passing
+  // a negative span to density() used to request 48 million samples and only
+  // surfaced once sampled() began validating its contract.
+  const period = Math.abs(stride) / Math.max(...moves.map((m) => m.cruise));
   const samples = density(period);
 
   const legChannel = (c: Channel, lead: number): Channel => {

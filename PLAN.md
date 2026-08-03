@@ -1,5 +1,11 @@
 # Heron — Plan
 
+> Status note (August 2026): this is the founding design record, not the current
+> command reference. Several original exclusions were deliberately revisited
+> after the evaluator and verification instruments made thin output adapters
+> safe. The decisions are recorded in §2; use `SKILL.md` and `docs/delivery.md`
+> for the shipped workflow and compatibility contract.
+
 A TypeScript library that compiles animation code into a **self-contained animated SVG file**,
 designed so that an AI agent can author, inspect, and iterate on character animation without a
 human touching a mouse.
@@ -25,17 +31,17 @@ Everything in this plan follows from attacking exactly those two problems and no
 pivots) and a timeline. Output is one `.svg` file with CSS `@keyframes` inside it, playable in any
 browser, `<img>` tag, or GitHub README. Plus a CLI that lets an agent see and measure what it made.
 
-**Out — deliberately, permanently for v1:**
+**Founding exclusions and their current disposition:**
 
 | Not doing | Why |
 | --- | --- |
-| Rust render core | Only needed for video throughput. No video, no need. |
-| Video / mp4 / ffmpeg pipeline | Different product. Recipe in docs if ever needed. |
-| Lottie export | Lottie can't express procedural motion without dense baking; easing and feature support differ per player; it reintroduces the multi-renderer parity problem. |
+| Rust render core | Still out. Resvg is isolated at the process boundary where a native panic could otherwise lose a batch. |
+| Video / mp4 / ffmpeg pipeline | Shipped as a thin edge adapter over the verified evaluator. It shares the exact CFR clock with `frames` and adds no animation semantics. |
+| Lottie export | Shipped as a constrained second compiler. Unsupported semantics are refused, property parity is tested, and `lottie --check` replays real Skottie rasters against the SVG evaluator. |
 | Interactivity runtime / state machines | Would require shipping JS alongside output, killing the "plain file that works forever" property. |
-| Preview studio (Vite app, scrubber) | Largest package by far in comparable projects, and the most common cause of solo-maintainer burnout. The agent CLI covers iteration; humans open the SVG in a browser. |
+| Preview studio (Vite app, scrubber) | The Vite application remains out. What shipped is one dependency-free HTML artifact that scrubs the real compiled CSS; its curve data is also exposed as CLI text/JSON. |
 | Real 3D, shaders, video layers, audio sync | Out of format. |
-| Path (`d`) morphing | Safari does not animate `d` via CSS. Breaks the "compiles cleanly everywhere" guarantee. |
+| Path (`d`) morphing | Shipped as an explicitly compatibility-gated SVG feature. The compiler warns that the target browser set must be verified and masks/clips refuse morphs. It is not part of the cross-browser scalar parity claim. |
 
 **Why this scope is defensible:** the output outlives the tool. If the project is abandoned
 tomorrow, every SVG it ever produced keeps working, forever, with zero dependencies. That is an
@@ -61,11 +67,10 @@ crane.png ──▶ agent looks at it (vision)
          heron build ──▶ crane-walking.svg
 ```
 
-**The PNG is a reference, not an input format.** The agent does not trace it — auto-tracing
-(potrace and friends) produces exactly the merged, semantics-free path this project exists to
-escape. The agent *looks* at the PNG and *redraws* the character in the DSL, where every part has
-a name and a joint by construction. The result is a stylized likeness, which for icon-style
-artwork is what you want anyway.
+**The PNG remains the reference authority, but can now also seed measured geometry.** `trace`
+recovers named centreline runs and width profiles; `rig` proposes topology joints and synchronized
+cuts without pretending it inferred anatomy. The agent still supplies semantic grouping and
+pivots, then proves the result against the source with `match`.
 
 Note the loop appears twice: once to converge the static model on the reference, once to converge
 the motion. Same machinery both times.
@@ -280,7 +285,7 @@ Its criticism was more valuable than its success, and produced four fixes:
 | Hand-polished walk doesn't look good even with a perfect rig | High | M0 answers this in week one, for the cost of two evenings |
 | Baked output is unreadable write-only XML | Medium | Fit sparse keyframes first, dense-sample only procedural motion; readable output is part of the pitch |
 | Agent can't judge motion from stills | Medium | Contact sheets (`sheet`) + geometric lints, not vision alone |
-| Scope creep back toward the platform version | Medium | This document's §2 table is the answer. Video, studio, and interactivity are *not* deferred — they are declined. |
+| Scope creep back toward the platform version | Medium | §2 is the boundary: thin verified output/review adapters are allowed; an interactivity runtime, editor platform, 3D, and new animation semantics are not. |
 | npm name `heron` is squatted (dead 0.0.1 from 2015) | Low | Ship as `@heron/core` or similar scope |
 
 ## 7. Deferred decisions

@@ -114,8 +114,41 @@ export abstract class Windows {
 
   /** Cycle time of a point inside a window, `u` from 0 (its start) to 1 (its end). */
   time(name: string, u = 0): number {
+    if (!Number.isFinite(u) || u < 0 || u > 1) {
+      throw new Error(`heron: window progress must be inside 0..1, got ${u}`);
+    }
     const b = this.at(name);
     return b.from + (b.to - b.from) * u;
+  }
+
+  /** One window spanning from the start of `from` through the end of `to`. */
+  span(from: string, to: string): Beat {
+    const a = this.at(from);
+    const b = this.at(to);
+    if (b.to <= a.from) {
+      throw new Error(`heron: cannot span "${from}" through earlier window "${to}"`);
+    }
+    return {
+      name: `${from}..${to}`,
+      from: a.from,
+      to: b.to,
+      seconds: (b.to - a.from) * this.duration,
+    };
+  }
+
+  /** A normalized sub-window of one named beat/cue. */
+  slice(name: string, from = 0, to = 1): Beat {
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from < 0 || to > 1 || to <= from) {
+      throw new Error(`heron: slice() needs 0 <= from < to <= 1, got [${from}, ${to}]`);
+    }
+    const b = this.at(name);
+    const width = b.to - b.from;
+    return {
+      name: `${name}[${from}..${to}]`,
+      from: b.from + width * from,
+      to: b.from + width * to,
+      seconds: b.seconds * (to - from),
+    };
   }
 
   /** Places a local channel inside this window and holds its ends outside it. */
@@ -126,6 +159,11 @@ export abstract class Windows {
   /** Places a procedural shape inside this window. */
   during(name: string, shape: Shape, samples?: number): Channel {
     return during(this.at(name), shape, samples);
+  }
+
+  /** Places a channel as a self-contained additive layer, neutral outside. */
+  additive(name: string, channel: Channel, o: AdditiveOptions = {}): Channel {
+    return withinAdditive(this.at(name), channel, o);
   }
 
   /** Gives one field instance its staggered sub-window inside this window. */
@@ -215,6 +253,18 @@ export function cueSheet(
  */
 export function score(of: number | Character, spans: Array<[string, number]>): Score {
   const duration = typeof of === 'number' ? of : of.duration;
+  if (!Number.isFinite(duration) || duration <= 0) {
+    throw new Error(`heron: score() needs a positive finite duration, got ${duration}`);
+  }
+  const names = new Set<string>();
+  for (const [name, seconds] of spans) {
+    if (!name) throw new Error('heron: score() beat names cannot be empty');
+    if (names.has(name)) throw new Error(`heron: score() has duplicate beat "${name}"`);
+    names.add(name);
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      throw new Error(`heron: beat "${name}" seconds must be finite and at least zero`);
+    }
+  }
   const slack = duration - spans.reduce((n, [, s]) => n + Math.max(0, s), 0);
   const fillers = spans.filter(([, s]) => s <= 0).length;
   if (fillers > 1) throw new Error('heron: score() takes at most one beat sized 0, to absorb the remainder');
@@ -251,6 +301,7 @@ export function score(of: number | Character, spans: Array<[string, number]>): S
  * that genuinely need sampling get sampled.
  */
 export function during(b: Beat, shape: Shape, samples?: number): Channel {
+  validateBeat(b, 'during');
   if (shape.keys && samples === undefined) return keys(shape.keys(b));
   const width = Math.max(1e-6, b.to - b.from);
   const before = shape(0, 0);
@@ -278,10 +329,7 @@ export function during(b: Beat, shape: Shape, samples?: number): Channel {
  * to preserve the density it requested inside the narrower window.
  */
 export function within(b: Beat, channel: Channel): Channel {
-  if (!Number.isFinite(b.from) || !Number.isFinite(b.to)
-      || b.from < 0 || b.to > 1 || b.to <= b.from) {
-    throw new Error(`heron: within() needs a positive window inside 0..1, got [${b.from}, ${b.to}]`);
-  }
+  validateBeat(b, 'within');
   const width = b.to - b.from;
 
   if (channel.kind === 'fn') {
@@ -327,6 +375,76 @@ export function within(b: Beat, channel: Channel): Channel {
   return { kind: 'keys', keys: mapped };
 }
 
+export interface AdditiveOptions {
+  /** Neutral for this layer: 0 for additive transforms, 1 for scale/opacity. */
+  neutral?: number;
+  /** Fraction of the local window used to enter the channel's first value. */
+  attack?: number;
+  /** Fraction used to return from its last value to neutral. */
+  release?: number;
+}
+
+/**
+ * Places a continuous, self-contained layer inside a beat.
+ *
+ * Unlike within(), which deliberately holds its edge values, this adds explicit
+ * neutral ramps at both sides. The caller chooses the neutral because additive
+ * rotation/translation use 0 while multiplicative scale and opacity use 1.
+ */
+export function withinAdditive(b: Beat, channel: Channel, o: AdditiveOptions = {}): Channel {
+  validateBeat(b, 'withinAdditive');
+  const neutral = o.neutral ?? 0;
+  const attack = o.attack ?? 0.08;
+  const release = o.release ?? 0.08;
+  if (![neutral, attack, release].every(Number.isFinite) || attack < 0 || release < 0
+      || attack + release >= 1) {
+    throw new Error('heron: withinAdditive() needs finite neutral and non-negative attack/release whose sum is below 1');
+  }
+  const active = 1 - attack - release;
+  let local: Channel;
+  if (channel.kind === 'fn') {
+    const first = channel.fn(0);
+    const last = channel.fn(1);
+    local = sampled((t) => {
+      if (attack > 0 && t < attack) return neutral + (first - neutral) * t / attack;
+      if (release > 0 && t > 1 - release) {
+        return last + (neutral - last) * (t - (1 - release)) / release;
+      }
+      return channel.fn(Math.max(0, Math.min(1, (t - attack) / active)));
+    }, Math.ceil(channel.samples / active));
+  } else {
+    const first = channel.keys[0];
+    const last = channel.keys.at(-1)!;
+    const tuples: KeyTuple[] = [[0, neutral, linear]];
+    if (attack > 0) tuples.push([attack, first.v, first.ease]);
+    for (const key of channel.keys) {
+      const tuple: KeyTuple = [attack + key.t * active, key.v, key.ease];
+      const previous = tuples.at(-1)!;
+      if (Math.abs(previous[0] - tuple[0]) < 1e-12) tuples[tuples.length - 1] = tuple;
+      else tuples.push(tuple);
+    }
+    if (release > 0 && Math.abs(tuples.at(-1)![0] - (1 - release)) > 1e-12) {
+      tuples.push([1 - release, last.v, linear]);
+    }
+    if (release > 0) tuples.push([1, neutral, linear]);
+    else if (tuples.at(-1)![1] !== neutral) {
+      throw new Error('heron: withinAdditive() release must be positive when the channel does not end at neutral');
+    }
+    local = keys(tuples);
+  }
+  return within(b, local);
+}
+
+function validateBeat(b: Beat, fn: string): void {
+  if (!b || typeof b.name !== 'string' || !Number.isFinite(b.from) || !Number.isFinite(b.to)
+      || b.from < 0 || b.to > 1 || b.to <= b.from
+      || !Number.isFinite(b.seconds) || b.seconds <= 0) {
+    throw new Error(
+      `heron: ${fn}() needs a positive window inside 0..1 with positive finite seconds`,
+    );
+  }
+}
+
 export interface StaggerOptions {
   /**
    * How much of the beat is spent handing out start times, 0 to 1. At 0 every
@@ -351,6 +469,7 @@ export interface StaggerOptions {
  * coming apart, and the only difference between them is here.
  */
 export function stagger(b: Beat, i: number, n: number, o: StaggerOptions = {}): Beat {
+  validateBeat(b, 'stagger');
   const spread = Math.max(0, Math.min(1, o.spread ?? 0.6));
   const rank = o.order ? o.order.indexOf(i) : i;
   const at = n > 1 ? Math.max(0, rank) / (n - 1) : 0;

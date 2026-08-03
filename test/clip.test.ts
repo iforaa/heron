@@ -49,6 +49,16 @@ test('clip paths can use grouped ordinary geometry and sheets define them once',
   assert.doesNotMatch(sheet, /h-geometry-only/, 'definition-only groups do not leak animation classes');
 });
 
+test('review sheets accept exact per-frame labels and reject a mismatched list', () => {
+  const scene = character('labels', { viewBox: [0, 0, 20, 20] }, () => {
+    circle({ cx: 10, cy: 10, r: 4, fill: '#000' });
+  });
+  const sheet = renderSheet(scene, [0, 0.5], { labels: ['#0000 · 0.000s', '#0001 · 0.500s'] });
+  assert.match(sheet, /#0000 · 0.000s/);
+  assert.match(sheet, /#0001 · 0.500s/);
+  assert.throws(() => renderSheet(scene, [0, 0.5], { labels: ['one'] }), /2-frame sheet needs 2 labels/);
+});
+
 test('clip paths validate scope, identity and non-empty geometry', () => {
   assert.throws(() => clipPath('outside', () => {}), /inside character/);
   assert.throws(

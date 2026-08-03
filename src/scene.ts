@@ -110,15 +110,20 @@ export type Channel =
  * compiled honestly. Adding one means adding it here and nowhere else — every
  * other module iterates this table rather than restating the list.
  */
-export const CHANNELS = ['rotate', 'x', 'y', 'scaleX', 'scaleY', 'opacity', 'draw'] as const;
+export const CHANNELS = [
+  'rotate', 'x', 'y', 'skewX', 'skewY', 'scaleX', 'scaleY', 'opacity', 'draw',
+] as const;
 
 export type ChannelName = (typeof CHANNELS)[number];
+export type PartTransform = Partial<Record<Exclude<ChannelName, 'draw'>, number>>;
 
 /** The value of each channel when nothing is animating it. */
 export const NEUTRAL: Record<ChannelName, number> = {
   rotate: 0,
   x: 0,
   y: 0,
+  skewX: 0,
+  skewY: 0,
   scaleX: 1,
   scaleY: 1,
   opacity: 1,
@@ -140,6 +145,8 @@ export interface Node {
   /** Dotted path from the root, e.g. `legs.near.thigh`. */
   path: string;
   pivot?: Vec2;
+  /** Static local pose, composed before motion and omitted from animation reports. */
+  transform?: PartTransform;
   /** Point that is expected to meet the ground, in rest-pose coordinates. */
   contact?: Vec2;
   /** This part and everything under it is meant to run past the frame edge. */
@@ -193,6 +200,20 @@ export class Character {
   readonly definitions: Definition[];
 
   constructor(name: string, opts: CharacterOptions, root: Node, definitions: Definition[] = []) {
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new Error('heron: character name must be a non-empty string');
+    }
+    if (!Array.isArray(opts.viewBox) || opts.viewBox.length !== 4
+        || !opts.viewBox.every(Number.isFinite)
+        || opts.viewBox[2] <= 0 || opts.viewBox[3] <= 0) {
+      throw new Error(`heron: character "${name}" needs a finite viewBox with positive width and height`);
+    }
+    if (opts.duration !== undefined && (!Number.isFinite(opts.duration) || opts.duration <= 0)) {
+      throw new Error(`heron: character "${name}" duration must be a positive finite number`);
+    }
+    if (opts.ground !== undefined && !Number.isFinite(opts.ground)) {
+      throw new Error(`heron: character "${name}" ground must be finite`);
+    }
     this.name = name;
     this.viewBox = opts.viewBox;
     this.duration = opts.duration ?? 1;
@@ -295,6 +316,30 @@ export class PartHandle {
    * first, matching how a parent's transform sits above a child's.
    */
   animate(track: Track): this {
+    const allowed = new Set<string>([...CHANNELS, 'phase']);
+    const unknown = Object.keys(track).filter((name) => !allowed.has(name));
+    if (unknown.length) {
+      throw new Error(
+        `heron: part "${this.node.path || '(root)'}" cannot animate unknown channel`
+        + `${unknown.length === 1 ? '' : 's'} ${unknown.join(', ')}. Available: ${CHANNELS.join(', ')}`,
+      );
+    }
+    if (track.phase !== undefined
+        && (!Number.isFinite(track.phase) || track.phase < 0 || track.phase >= 1)) {
+      throw new Error(
+        `heron: part "${this.node.path || '(root)'}" phase must be finite and from 0 up to, but not including, 1`,
+      );
+    }
+    for (const name of activeChannels(track)) {
+      const channel = track[name] as Channel | undefined;
+      if (!channel || (channel.kind !== 'keys' && channel.kind !== 'fn')) {
+        throw new Error(`heron: part "${this.node.path || '(root)'}" channel ${name} is not a Heron channel`);
+      }
+      if (channel.kind === 'keys') validateKeys(channel.keys, `${this.node.path || '(root)'}.${name}`);
+      else if (typeof channel.fn !== 'function' || !Number.isInteger(channel.samples) || channel.samples < 2) {
+        throw new Error(`heron: part "${this.node.path || '(root)'}" channel ${name} has an invalid sampled curve`);
+      }
+    }
     this.node.tracks.push(track);
     return this;
   }
@@ -548,6 +593,16 @@ export class SwapHandle {
       : at.beats.map((b): [number, string] => [b.from, b.name]);
     if (!list.length) throw new Error('heron: a swap needs at least one cut');
 
+    for (let i = 0; i < list.length; i++) {
+      const time = list[i][0];
+      if (!Number.isFinite(time) || time < 0 || time > 1) {
+        throw new Error(`heron: swap cut time ${time} must be finite inside 0..1`);
+      }
+      if (i && time === list[i - 1][0]) {
+        throw new Error(`heron: swap has two cuts at t=${time}; each instant can choose only one variant`);
+      }
+    }
+
     for (const [, name] of list) {
       if (!this.names.includes(name)) {
         throw new Error(`heron: no variant "${name}" here. This swap has: ${this.names.join(', ')}`);
@@ -586,8 +641,16 @@ export class SwapHandle {
   play(o: { from?: number; to?: number; cycles?: number; fps?: number; ease?: Easing } = {}): this {
     const from = o.from ?? 0;
     const to = o.to ?? 1;
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from < 0 || to > 1 || to <= from) {
+      throw new Error(`heron: swap play() needs 0 <= from < to <= 1, got [${from}, ${to}]`);
+    }
     if (o.cycles !== undefined && o.fps !== undefined) {
       throw new Error('heron: play() takes cycles or fps, not both - one implies the other');
+    }
+    for (const [name, value] of [['cycles', o.cycles], ['fps', o.fps]] as const) {
+      if (value !== undefined && (!Number.isFinite(value) || value <= 0)) {
+        throw new Error(`heron: swap play() ${name} must be a positive finite number`);
+      }
     }
     const frames = o.fps !== undefined
       ? Math.max(1, Math.round((to - from) * this.duration * o.fps))
@@ -639,6 +702,8 @@ export function character(name: string, opts: CharacterOptions, body: () => void
 export interface PartOptions {
   pivot?: Vec2;
   contact?: Vec2;
+  /** Static local pose. Use animation tracks only for values that actually move. */
+  transform?: PartTransform;
   /**
    * This subtree is meant to be outside the frame, exempting it from the
    * `out-of-view` lint.
@@ -663,9 +728,32 @@ export function part(name: string, opts: PartOptions | (() => void), body?: () =
   const options = typeof opts === 'function' ? {} : opts;
   const fn = typeof opts === 'function' ? opts : body;
   const parent = current();
+  if (typeof name !== 'string' || !/^[A-Za-z0-9_-]+$/.test(name)) {
+    throw new Error(
+      `heron: part name "${name}" must contain only letters, digits, underscores and hyphens`
+      + ' (dots are reserved for rig paths)',
+    );
+  }
+  if (parent.content.some((item) => 'node' in item && item.node.name === name)) {
+    throw new Error(`heron: duplicate part "${parent.path ? `${parent.path}.` : ''}${name}"`);
+  }
+  if (options.transform !== undefined) {
+    if (!options.transform || typeof options.transform !== 'object' || Array.isArray(options.transform)) {
+      throw new Error(`heron: part "${name}" transform must be an object`);
+    }
+    const allowed = new Set<string>(CHANNELS.filter((channel) => channel !== 'draw'));
+    const unknown = Object.keys(options.transform).filter((channel) => !allowed.has(channel));
+    if (unknown.length) {
+      throw new Error(`heron: part "${name}" static transform has unknown channel${unknown.length > 1 ? 's' : ''} ${unknown.join(', ')}`);
+    }
+    for (const [channel, value] of Object.entries(options.transform)) {
+      if (!Number.isFinite(value)) throw new Error(`heron: part "${name}" static ${channel} must be finite`);
+    }
+  }
   const node = makeNode(name, parent.path);
   node.pivot = options.pivot;
   node.contact = options.contact;
+  node.transform = options.transform ? { ...options.transform } : undefined;
   node.offstage = options.offstage ?? parent.offstage;
   node.clip = options.clip?.id;
   node.mask = options.mask?.id;
@@ -746,6 +834,22 @@ export function swap(name: string, variants: Record<string, () => void>): void {
 
 function shape(tag: string, attrs: Record<string, string | number>): void {
   current().content.push({ shape: { tag, attrs } });
+}
+
+/**
+ * Low-level vector intake for geometry that already exists as SVG.
+ *
+ * This is intentionally not a new drawing abstraction: it records one ordinary
+ * SVG geometry element verbatim so an importer does not have to translate a
+ * faithful path through a lossy convenience API.
+ */
+export function svgShape(tag: string, attrs: Record<string, string | number>): void {
+  const supported = new Set(['path', 'circle', 'ellipse', 'rect', 'line', 'polygon', 'polyline']);
+  if (!supported.has(tag)) throw new Error(`heron: svgShape() does not support <${tag}>`);
+  if (!attrs || typeof attrs !== 'object' || Array.isArray(attrs)) {
+    throw new Error('heron: svgShape() attributes must be an object');
+  }
+  shape(tag, { ...attrs });
 }
 
 // --- primitives --------------------------------------------------------------
@@ -887,6 +991,14 @@ function definitionRoot(fn: string, name: string, body: () => void): Node {
     stack.pop();
   }
   if (!root.content.length) throw new Error(`heron: ${fn}("${name}") cannot be empty`);
+  const animated = (node: Node): boolean => node.content.some((item) =>
+    'shape' in item ? item.shape.morph !== undefined : animated(item.node));
+  if (animated(root)) {
+    throw new Error(
+      `heron: ${fn}("${name}") contains a path morph, but reusable definition geometry is static;`
+      + ' animate the part carrying the definition instead',
+    );
+  }
   return root;
 }
 
@@ -1206,6 +1318,14 @@ export interface LimbOptions {
  * wrong, so it is worth having as one call.
  */
 export function limb(name: string, o: LimbOptions): void {
+  const unknown = Object.keys(o).filter((key) =>
+    !['hip', 'segments', 'stroke', 'widths', 'foot'].includes(key));
+  if (unknown.length) {
+    throw new Error(
+      `heron: limb("${name}") has unknown option${unknown.length > 1 ? 's' : ''} ${unknown.join(', ')}`
+      + (unknown.includes('width') ? '; use widths: [thigh, shin, foot]' : ''),
+    );
+  }
   const [hx, hy] = o.hip;
   const [l1, l2] = o.segments;
   const knee: Vec2 = [hx, hy + l1];
@@ -1237,18 +1357,36 @@ export function limb(name: string, o: LimbOptions): void {
 
 export type KeyTuple = [number, number] | [number, number, Easing];
 
+function validateKeys(
+  list: Array<{ t: number; v: number; ease: Easing }>, label = 'keys()',
+): void {
+  if (list.length < 2) throw new Error(`heron: ${label} needs at least two keyframes`);
+  for (let i = 0; i < list.length; i++) {
+    const k = list[i];
+    if (!Number.isFinite(k.t) || k.t < 0 || k.t > 1) {
+      throw new Error(`heron: ${label} keyframe time ${k.t} is not finite inside 0..1`);
+    }
+    if (!Number.isFinite(k.v)) {
+      throw new Error(`heron: ${label} keyframe at t=${k.t} has non-finite value ${k.v}`);
+    }
+    if (!k.ease || typeof k.ease.fn !== 'function' || typeof k.ease.css !== 'string') {
+      throw new Error(`heron: ${label} keyframe at t=${k.t} has an invalid easing`);
+    }
+    if (i && k.t <= list[i - 1].t) {
+      throw new Error(`heron: ${label} keyframe times must be strictly increasing`);
+    }
+  }
+}
+
 /**
  * Keyframes over the cycle, times normalised to 0..1. A key's easing governs
  * the segment that *starts* at that key, matching CSS keyframe semantics.
  */
 export function keys(list: KeyTuple[], defaultEase: Easing = linear): Channel {
-  if (list.length < 2) throw new Error('heron: keys() needs at least two keyframes');
   const ks = list
     .map(([t, v, e]) => ({ t, v, ease: e ?? defaultEase }))
     .sort((a, b) => a.t - b.t);
-  for (const k of ks) {
-    if (k.t < 0 || k.t > 1) throw new Error(`heron: keyframe time ${k.t} is outside 0..1`);
-  }
+  validateKeys(ks);
   return { kind: 'keys', keys: ks };
 }
 
@@ -1257,5 +1395,9 @@ export function keys(list: KeyTuple[], defaultEase: Easing = linear): Channel {
  * in CSS directly, so the compiler bakes it to sampled keyframes.
  */
 export function sampled(fn: (t: number) => number, samples = 48): Channel {
+  if (typeof fn !== 'function') throw new Error('heron: sampled() needs a function');
+  if (!Number.isInteger(samples) || samples < 2 || samples > 100_000) {
+    throw new Error('heron: sampled() samples must be an integer from 2 to 100000');
+  }
   return { kind: 'fn', fn, samples };
 }

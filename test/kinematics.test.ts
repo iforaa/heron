@@ -174,6 +174,34 @@ test('reach() layers over existing joint and ancestor motion', () => {
   }
 });
 
+test('reach() measures a crooked traced rest chain and gives target callbacks the frame', () => {
+  const root: Vec2 = [100, 100];
+  const joint: Vec2 = [104, 180];
+  const upperLength = Math.hypot(joint[0] - root[0], joint[1] - root[1]);
+  const lowerLength = 70;
+  const end: Vec2 = [
+    joint[0] + (joint[0] - root[0]) / upperLength * lowerLength,
+    joint[1] + (joint[1] - root[1]) / upperLength * lowerLength,
+  ];
+  const scene = character('measured', { viewBox: [0, 0, 400, 400] }, () => {
+    part('upper', { pivot: root }, () => {
+      line({ from: root, to: joint, stroke: '#000' });
+      part('lower', { pivot: joint }, () => line({ from: joint, to: end, stroke: '#000' }));
+    });
+    part('target', { pivot: [220, 170] }, () => circle({ cx: 220, cy: 170, r: 2 }));
+  });
+  let receivedFrame = false;
+  reach(scene, {
+    chain: ['upper', 'lower'], lengths: [upperLength, lowerLength], bend: 1,
+    target: (_t, frame) => {
+      receivedFrame = true;
+      return frame.point(scene.find('target')!);
+    },
+  });
+  pointClose(frameAt(scene, 0.37).point(scene.find('lower')!, end), [220, 170], 1e-8);
+  assert.equal(receivedFrame, true);
+});
+
 test('reach() can follow a point carried by another animated part', () => {
   const marker: Vec2 = [340, 250];
   // The target must belong to the same character, so build a second rig with

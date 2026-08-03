@@ -19,7 +19,8 @@
  */
 
 import { evaluate } from './timeline.ts';
-import { nodeSvg, sceneBox, svgOpen } from './render.ts';
+import { sceneBox } from './geometry.ts';
+import { nodeSvg, svgOpen } from './render.ts';
 import type { Character } from './scene.ts';
 import {
   type Bitmap, type Mask, coverage, dilate, inkMask, loadImage, median, rasterise,
@@ -73,9 +74,21 @@ export interface MatchReport {
  * comparison is done in the reference's coordinate system and the scene is
  * placed into it unchanged.
  */
-function sceneInReferenceSpace(ch: Character, t: number, w: number, h: number): string {
+function sceneInReferenceSpace(
+  ch: Character, t: number, w: number, h: number, referenceScale: number,
+): string {
   const pose = evaluate(ch, t);
-  const open = svgOpen(ch, w, h).replace(/viewBox="[^"]*"/, `viewBox="0 0 ${w} ${h}"`);
+  // `loadImage` caps large references for tractable comparison, but scene
+  // coordinates remain in the reference's native pixel space. Using the
+  // downsampled dimensions as the viewBox shrinks the scene a second time: a
+  // 2048px trace compared against its own 1400px working image used to score as
+  // badly misplaced geometry. The output raster is still w*h; only its logical
+  // coordinate space is restored here.
+  const nativeWidth = w / referenceScale;
+  const nativeHeight = h / referenceScale;
+  const open = svgOpen(ch, w, h).replace(
+    /viewBox="[^"]*"/, `viewBox="0 0 ${nativeWidth} ${nativeHeight}"`,
+  );
   return `${open}\n${nodeSvg(ch.root, pose, '  ')}\n</svg>\n`;
 }
 
@@ -159,11 +172,11 @@ export interface MatchOptions {
   probes?: number;
 }
 
-export function match(ch: Character, referenceFile: string, o: MatchOptions = {}): MatchReport {
-  const refBm = loadImage(referenceFile);
+/** Compares against an already decoded raster, used by real backend replayers. */
+export function matchBitmap(ch: Character, refBm: Bitmap, o: MatchOptions = {}): MatchReport {
   const ref = inkMask(refBm, o.threshold);
 
-  const svg = sceneInReferenceSpace(ch, o.t ?? 0, refBm.width, refBm.height);
+  const svg = sceneInReferenceSpace(ch, o.t ?? 0, refBm.width, refBm.height, refBm.scale);
   const sceneBm: Bitmap = rasterise(svg, refBm.width, refBm.height);
   const scene = inkMask(sceneBm, o.threshold);
 
@@ -206,6 +219,10 @@ export function match(ch: Character, referenceFile: string, o: MatchOptions = {}
     widthRatio: refW ? Math.round((sceneW / refW) * 1000) / 1000 : 0,
     overlay: overlayPng(ref, scene),
   };
+}
+
+export function match(ch: Character, referenceFile: string, o: MatchOptions = {}): MatchReport {
+  return matchBitmap(ch, loadImage(referenceFile), o);
 }
 
 /**

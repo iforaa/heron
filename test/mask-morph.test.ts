@@ -46,13 +46,15 @@ test('compatible path commands interpolate in static frames and compiled CSS', (
   });
   assert.match(renderStatic(scene, 0.5), new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 
-  const { svg, animated } = compile(scene);
+  const { svg, animated, report } = compile(scene);
   assert.deepEqual(animated, ['.h-morph-0']);
   assert.match(svg, /class="h-morph-0"/);
   assert.match(svg, /@keyframes kf-morph-0/);
   assert.match(svg, /d: path\("M 20 5 L 35 20 L 20 35 L 5 20 Z"\)/);
   assert.match(svg, /animation-timing-function: ease-in/);
   assert.match(svg, /2s linear 1 forwards/);
+  assert.deepEqual(report.morphs, [{ index: 0, keyframes: 3 }]);
+  assert.ok(report.warnings.some((warning) => /target browser set/.test(warning)));
 });
 
 test('path morphs validate topology rather than guessing correspondence', () => {
@@ -69,6 +71,15 @@ test('path morphs validate topology rather than guessing correspondence', () => 
 
 test('masks validate scope, geometry and regions', () => {
   assert.throws(() => mask('outside', () => {}), /inside character/);
+  assert.throws(
+    () => character('animated definition', { viewBox: [0, 0, 10, 10] }, () => {
+      mask('moving', () => path({
+        d: pathMorph([[0, 'M0 0 L5 0 L5 5 Z'], [1, 'M0 0 L9 0 L9 9 Z']]),
+        fill: '#fff',
+      }));
+    }),
+    /contains a path morph.*definition geometry is static/,
+  );
   assert.throws(
     () => character('empty', { viewBox: [0, 0, 10, 10] }, () => mask('empty', () => {})),
     /cannot be empty/,

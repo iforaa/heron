@@ -16,7 +16,10 @@ function richScene() {
     });
     const crop = clipPath('crop', () => circle({ cx: 50, cy: 30, r: 25 }));
     const fade = mask('fade', () => circle({ cx: 50, cy: 30, r: 24, fill: '#fff' }));
-    part('mark', { pivot: [50, 30], contact: [50, 55], clip: crop, mask: fade }, () => {
+    part('mark', {
+      pivot: [50, 30], contact: [50, 55], clip: crop, mask: fade,
+      transform: { x: 3, rotate: 4, opacity: 0.8 },
+    }, () => {
       circle({ cx: 50, cy: 30, r: 20, fill: glow });
       path({
         d: pathMorph([

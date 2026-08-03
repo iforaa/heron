@@ -13,6 +13,7 @@ export {
   line,
   path,
   polygon,
+  svgShape,
   arc,
   arcPath,
   through,
@@ -32,7 +33,7 @@ export {
   SwapHandle,
 } from './scene.ts';
 export type {
-  Vec2, ViewBox, Track, Channel, ChannelName, Node,
+  Vec2, ViewBox, Track, Channel, ChannelName, PartTransform, Node,
   CharacterOptions, PartOptions, LimbOptions, ArcOptions, CurveOptions, RibbonOptions,
   FieldForm, MorphThroughOptions, PaintRef, PaintValue, PaintDefinition,
   ClipRef, ClipDefinition, MaskRef, MaskDefinition, MaskOptions, Definition,
@@ -48,9 +49,9 @@ export { spring, settleTime, criticalDamping } from './spring.ts';
 export type { SpringOptions } from './spring.ts';
 
 export {
-  score, Score, cueSheet, CueSheet, during, within, density, stagger, swell, shift, ramp, hold,
+  score, Score, cueSheet, CueSheet, during, within, withinAdditive, density, stagger, swell, shift, ramp, hold,
 } from './score.ts';
-export type { Beat, CueSpan, Shape, StaggerOptions } from './score.ts';
+export type { Beat, CueSpan, Shape, StaggerOptions, AdditiveOptions } from './score.ts';
 
 export { halftone, halftoneFile, plateSource } from './halftone.ts';
 export type { Dot, Plate, HalftoneOptions } from './halftone.ts';
@@ -69,6 +70,8 @@ export type {
 
 export { hasFfmpeg, videoArgs, renderVideo } from './video.ts';
 export type { VideoOptions, VideoReport } from './video.ts';
+export { playbackTimes, deliveryProfile, endpointFrameClock } from './delivery.ts';
+export type { DeliveryProfile } from './delivery.ts';
 
 export { solveTwoBone, reach } from './kinematics.ts';
 export type {
@@ -91,20 +94,25 @@ export { seeded } from './random.ts';
 export type { NoiseOptions, AimOptions } from './motion.ts';
 
 export {
-  evaluate, netPose, channelAt, trackAt, pointAt, worldMatrices, frameAt,
-  sampleFrames, invert,
+  evaluate, netPose, nodePose, restPose, channelAt, trackAt, pointAt, worldMatrices, frameAt,
+  sampleFrames, invert, localMatrix,
 } from './timeline.ts';
 export type { Pose, NodePose, Frame, Mat, TrackSnapshot } from './timeline.ts';
 
 export {
   cssClass, definitionsSvg, renderContext, renderStatic, renderSheet, renderCueSheet, renderShapeSheet,
   renderMotionSheet, renderVariantSheet, prefixIds,
-  listShapes, partBox, sceneBox, subtreeCorners, localCorners, boxOfCorners,
-  mergeBoxes, cueFrames, sheetTimes, sheetWidth, pathLength, strokeLength, zoomBox,
+  listShapes, cueFrames, sheetTimes, sheetWidth, zoomBox, transformAttr,
   TRACK_HUES, MOTION_CELL, SHEET_CELL,
 } from './render.ts';
 export type { ShapeRef, NodeSvgOptions, VariantCell } from './render.ts';
-export type { Box, RenderOptions, CueFrame, CueSheetRenderOptions } from './render.ts';
+export type { RenderOptions, CueFrame, CueSheetRenderOptions } from './render.ts';
+
+export {
+  partBox, sceneBox, subtreeCorners, localCorners, boxOfCorners, mergeBoxes,
+  frameBox, shapeBox, shapeLength, pathPoints, pathLength, strokeLength, dashOffset,
+} from './geometry.ts';
+export type { Box } from './geometry.ts';
 
 export {
   trackParts, trackable, resolvePart, resolveWindow, windowTimes, formatTrackReport,
@@ -116,11 +124,19 @@ export type {
   TrackWindow, TrackRequest, TrackedSample, TrackOptions, TrackReport, PartTrack,
   Hold, Deceleration, Clearance, PlantedRun,
 } from './track.ts';
-export { compile, keyframeName, EPSILON } from './compile.ts';
+export { compile, keyframeName, transformBakeReason, EPSILON } from './compile.ts';
 export type { CompileReport, CompileOptions } from './compile.ts';
 
+export { compileLottie, lottieContours } from './lottie.ts';
+export type { LottieOptions, LottieReport, LottieResult } from './lottie.ts';
+export { checkLottie, renderLottieFrame } from './lottie-check.ts';
+export type { LottieCheckOptions, LottieCheckReport, LottieCheckSample } from './lottie-check.ts';
+
+export { studio, curves, sampleCurves } from './studio.ts';
+export type { StudioOptions, Curve, CurveSample } from './studio.ts';
+
 export { lint, formatFindings } from './lint.ts';
-export type { Finding } from './lint.ts';
+export type { Finding, LintOptions } from './lint.ts';
 
 export { walkCycle, bodyBob, sway, pulse, applyGait } from './behaviors/walk.ts';
 export type { WalkOptions, WalkTracks, BobOptions } from './behaviors/walk.ts';
@@ -132,10 +148,16 @@ export { jump, hops } from './behaviors/jump.ts';
 export type { JumpOptions, HopOptions } from './behaviors/jump.ts';
 
 export { trace } from './trace.ts';
+export { measuredRun, cutRun, joinRuns } from './runs.ts';
+export type { MeasuredRun } from './runs.ts';
+export { analyzeRig } from './rig.ts';
+export type { RigReport, RigRunReport, RigCutSuggestion } from './rig.ts';
+export { importSvgSource } from './import-svg.ts';
+export type { ImportSvgOptions, ImportSvgResult } from './import-svg.ts';
 export { hasPotrace, outlinePaths } from './outline.ts';
 export type { OutlineOptions } from './outline.ts';
 export type { TraceOptions, TraceResult } from './trace.ts';
-export { match, formatMatch } from './match.ts';
+export { match, matchBitmap, formatMatch } from './match.ts';
 export type { MatchReport, MatchOptions, WidthProbe } from './match.ts';
 export {
   loadImage, rasterise, inkMask, inkColour, distanceField, radiusField,

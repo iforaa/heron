@@ -2,11 +2,37 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  character, part, limb, ellipse, circle, path, keys, sampled,
+  character, part, limb, ellipse, circle, path, svgShape, keys, sampled,
   compile, evaluate, netPose, pointAt, frameAt, lint, renderStatic, renderShapeSheet, listShapes,
   cubicBezier, linear, easeInOut, walkCycle, partBox,
   arcPath, curvePath, type Vec2,
+  localMatrix, transformAttr, type Mat, type NodePose,
 } from '../src/index.ts';
+
+function matrixFromSvgTransform(text: string): Mat {
+  const mul = (a: Mat, b: Mat): Mat => [
+    a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1],
+    a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+    a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5],
+  ];
+  let matrix: Mat = [1, 0, 0, 1, 0, 0];
+  for (const match of text.matchAll(/(translate|rotate|skewX|skewY|scale)\(([^)]*)\)/g)) {
+    const values = match[2].trim().split(/[ ,]+/).map(Number);
+    const radians = (values[0] ?? 0) * Math.PI / 180;
+    let operation: Mat;
+    if (match[1] === 'translate') operation = [1, 0, 0, 1, values[0], values[1] ?? 0];
+    else if (match[1] === 'scale') operation = [values[0], 0, 0, values[1] ?? values[0], 0, 0];
+    else if (match[1] === 'skewX') operation = [1, 0, Math.tan(radians), 1, 0, 0];
+    else if (match[1] === 'skewY') operation = [1, Math.tan(radians), 0, 1, 0, 0];
+    else {
+      const rotate: Mat = [Math.cos(radians), Math.sin(radians), -Math.sin(radians), Math.cos(radians), 0, 0];
+      const [x, y] = [values[1] ?? 0, values[2] ?? 0];
+      operation = mul(mul([1, 0, 0, 1, x, y], rotate), [1, 0, 0, 1, -x, -y]);
+    }
+    matrix = mul(matrix, operation);
+  }
+  return matrix;
+}
 import { crane } from '../examples/crane.ts';
 
 test('cubic-bezier matches the CSS curve at known points', () => {
@@ -67,6 +93,31 @@ test('nested pivots compose: a child follows its parent', () => {
   assert.equal(Math.round(y1), 20);
 });
 
+test('skew transforms geometry around the declared pivot', () => {
+  const scene = character('skew', { viewBox: [0, 0, 100, 100] }, () => {
+    part('mark', { pivot: [20, 20] }, () => circle({ cx: 20, cy: 40, r: 1 }));
+  });
+  scene.part('mark').animate({
+    skewX: keys([[0, 45], [1, 45]]),
+    skewY: keys([[0, 0], [1, 0]]),
+  });
+  const [x, y] = pointAt(scene, 'mark', 0, [20, 40]);
+  assert.ok(Math.abs(x - 40) < 1e-9);
+  assert.ok(Math.abs(y - 40) < 1e-9);
+  assert.match(renderStatic(scene, 0), /skewX\(45\)/);
+});
+
+test('the SVG transform attribute and evaluator local matrix are the same operation', () => {
+  const pose: NodePose = {
+    rotate: 27, x: 13, y: -8, skewX: 11, skewY: -6,
+    scaleX: 1.25, scaleY: 0.8, opacity: 1, draw: 1,
+  };
+  const expected = localMatrix(pose, [40, 55]);
+  const replayed = matrixFromSvgTransform(transformAttr(pose, [40, 55]));
+  expected.forEach((value, index) =>
+    assert.ok(Math.abs(value - replayed[index]) < 1e-9, `${index}: ${value} != ${replayed[index]}`));
+});
+
 test('part lookup accepts a shorthand path but refuses an ambiguous one', () => {
   const scene = character('t', { viewBox: [0, 0, 10, 10] }, () => {
     part('body', () => {
@@ -77,6 +128,82 @@ test('part lookup accepts a shorthand path but refuses an ambiguous one', () => 
   assert.equal(scene.find('legA.foot')!.path, 'body.legA.thigh.shin.foot');
   assert.throws(() => scene.part('foot'), /ambiguous/);
   assert.throws(() => scene.part('nope'), /no part/);
+});
+
+test('scene construction rejects values that would become invalid or ambiguous SVG', () => {
+  assert.throws(
+    () => character('bad', { viewBox: [0, 0, 0, 10] }, () => {}),
+    /positive width and height/,
+  );
+  assert.throws(
+    () => character('bad', { viewBox: [0, 0, 10, 10], duration: -1 }, () => {}),
+    /duration must be a positive finite number/,
+  );
+  assert.throws(
+    () => character('bad', { viewBox: [0, 0, 10, 10] }, () => part('bad.name', () => {})),
+    /part name.*dots are reserved/,
+  );
+  assert.throws(
+    () => character('bad', { viewBox: [0, 0, 10, 10] }, () => {
+      part('same', () => {});
+      part('same', () => {});
+    }),
+    /duplicate part "same"/,
+  );
+});
+
+test('flat hyphenated names cannot collide with nested rig paths in compiled CSS', () => {
+  const scene = character('names', { viewBox: [0, 0, 10, 10] }, () => {
+    part('foo-bar', () => circle({ cx: 2, cy: 2, r: 1 }));
+    part('foo', () => part('bar', () => circle({ cx: 6, cy: 2, r: 1 })));
+  });
+  scene.part('foo-bar').animate({ x: keys([[0, 0], [1, 1]]) });
+  scene.part('foo.bar').animate({ x: keys([[0, 0], [1, 2]]) });
+  const svg = compile(scene).svg;
+  assert.match(svg, /class="h-foo_2d_bar"/);
+  assert.match(svg, /class="h-foo-bar"/);
+});
+
+test('parts carry a real static pose without pretending it is animation', () => {
+  const scene = character('rest', { viewBox: [0, 0, 30, 30] }, () => {
+    part('mark', {
+      pivot: [0, 0],
+      transform: { x: 10, y: 5, rotate: 90, scaleX: 2, opacity: 0.5 },
+    }, () => circle({ cx: 1, cy: 0, r: 1, fill: '#000' }));
+  });
+  const [x, y] = pointAt(scene, 'mark', 0, [1, 0]);
+  assert.ok(Math.abs(x - 10) < 1e-9);
+  assert.ok(Math.abs(y - 7) < 1e-9);
+  assert.equal(frameAt(scene, 0).point(scene.find('mark')!, [1, 0])[1], 7);
+  assert.match(renderStatic(scene, 0), /transform="translate\(10 5\) rotate\(90 0 0\).*scale\(2 1\)/);
+  const built = compile(scene);
+  assert.equal(built.report.parts.length, 0);
+  assert.doesNotMatch(built.svg, /@keyframes/);
+});
+
+test('tracks reject unknown channels, non-finite keys and unrepresentable phase', () => {
+  const scene = character('strict', { viewBox: [0, 0, 10, 10] }, () => {
+    part('mark', () => circle({ cx: 5, cy: 5, r: 2 }));
+  });
+  assert.throws(
+    () => scene.part('mark').animate({ rotateZ: keys([[0, 0], [1, 20]]) } as never),
+    /unknown channel rotateZ/,
+  );
+  assert.throws(() => keys([[0, 0], [1, Number.NaN]]), /non-finite value/);
+  assert.throws(() => keys([[Number.NaN, 0], [1, 1]]), /time NaN is not finite/);
+  assert.throws(() => keys([[0.5, 0], [0.5, 1]]), /strictly increasing/);
+  assert.throws(
+    () => scene.part('mark').animate({ rotate: keys([[0, 0], [1, 20]]), phase: -0.2 }),
+    /phase must be finite/,
+  );
+});
+
+test('the compiler refuses a procedural channel the moment it returns a non-finite value', () => {
+  const scene = character('nan', { viewBox: [0, 0, 10, 10] }, () => {
+    part('dot', () => circle({ cx: 2, cy: 2, r: 1 }));
+  });
+  scene.part('dot').animate({ x: sampled((t) => (t > 0.4 ? Number.NaN : t), 10) });
+  assert.throws(() => compile(scene), /channel x returned NaN at t=/);
 });
 
 test('CSS-expressible keyframes compile exactly, with no resampling', () => {
@@ -211,6 +338,23 @@ test('offstage is exempt from out-of-view, and only from that', () => {
   assert.ok(!quiet.some((f) => f.rule === 'out-of-view'), 'the backdrop stops being measured');
   // Everything else still applies: the contact point is 70 units above ground.
   assert.ok(quiet.some((f) => f.rule === 'no-ground-contact'), 'other rules keep running');
+});
+
+test('out-of-view measures a rotated circle, not its imaginary box corners', () => {
+  const scene = character('round', { viewBox: [0, 0, 100, 100] }, () => {
+    part('disc', { pivot: [50, 50] }, () => circle({ cx: 50, cy: 50, r: 40 }));
+  });
+  scene.part('disc').animate({ rotate: keys([[0, 0], [0.5, 45], [1, 0]]) });
+  assert.ok(!lint(scene).some((finding) => finding.rule === 'out-of-view'));
+});
+
+test('numeric bounds include a raw imported SVG shape transform', () => {
+  const scene = character('imported', { viewBox: [0, 0, 100, 100] }, () => {
+    part('mark', () => svgShape('rect', {
+      x: 0, y: 0, width: 10, height: 20, transform: 'translate(30 40) rotate(90 0 0)',
+    }));
+  });
+  assert.deepEqual(partBox(scene, 'mark', 0), { x0: 10, y0: 40, x1: 30, y1: 50 });
 });
 
 test('the scrolling scene moves the ground at exactly the speed the gait demands', async () => {

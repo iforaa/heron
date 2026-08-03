@@ -358,6 +358,16 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
     });
   }
   const mode = o.ribbons ?? 'all';
+  if (found.length) used.add('measuredRun');
+
+  const runData = found.map((run, i) => {
+    const options = [
+      run.cap === 'butt' ? `cap: 'butt' as const` : '',
+      run.closed ? 'closed: true' : '',
+    ].filter(Boolean).join(', ');
+    return `  s${i}: measuredRun([\n${pointList(run.points, s)},\n  ], [\n`
+      + `${wrap(run.widths.map((width) => n1(width / s)))},\n  ]${options ? `, { ${options} }` : ''}),`;
+  }).join('\n');
 
   const body = found.map((k, i) => {
     const box = `[${bounds(k.points, s).map(Math.round).join(' ')}]`;
@@ -398,8 +408,7 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
       profiled++;
       return `${head}    //   width runs ${n1(Math.min(...k.widths) * 2 / s)} to ${n1(Math.max(...k.widths) * 2 / s)}, `
         + `so this is a measured profile rather than one number.\n`
-        + `    ribbon([\n${pointList(k.points, s)},\n    ], [\n`
-        + `${wrap(k.widths.map((r) => n1(r / s)))},\n    ], { fill: INK`
+        + `    ribbon(RUNS.s${i}.points, RUNS.s${i}.widths, { fill: INK`
         + `${k.cap === 'butt' ? `, cap: 'butt'` : ''}${k.closed ? ', closed: true' : ''} });`;
     }
 
@@ -408,7 +417,7 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
       `stroke: INK`, `width: ${width}`,
       k.cap === 'butt' ? `cap: 'butt'` : '', k.closed ? 'closed: true' : '',
     ].filter(Boolean).join(', ');
-    return `${head}    through([\n${pointList(k.points, s)},\n    ], { ${opts} });`;
+    return `${head}    through(RUNS.s${i}.points, { ${opts} });`;
   }).join('\n\n');
 
   const jointList = joints.length
@@ -469,6 +478,14 @@ export function trace(file: string, o: TraceOptions = {}): TraceResult {
 import { ${[...used].join(', ')}, type Character } from '${o.importFrom ?? '@heron/core'}';
 
 const INK = '${colour}';
+
+// Named geometry data: group, cut or join these runs without ever transcribing
+// a point separately from its measured width profile.
+export const RUNS = {
+${runData}
+};
+
+export const JOINTS = [${joints.map((joint) => `[${n1(joint[0] / s)}, ${n1(joint[1] / s)}]`).join(', ')}];
 
 export const ${name}: Character = character(
   '${name}',

@@ -7,12 +7,13 @@
  */
 
 import { type Character, CHANNELS } from './scene.ts';
-import { type Frame, evaluate, netPose, sampleFrames } from './timeline.ts';
-import { EPSILON } from './compile.ts';
-import { frameBox, localCorners, subtreeCorners } from './render.ts';
+import { type Frame, evaluate, frameAt, netPose, nodePose } from './timeline.ts';
+import { EPSILON, transformBakeReason } from './compile.ts';
+import { frameBox, localCorners, subtreeCorners } from './geometry.ts';
 import {
   type PartTrack, type TrackReport, CONTACT_BAND, plantedRun, trackParts, trackable,
 } from './track.ts';
+import { playbackTimes } from './delivery.ts';
 
 export interface Finding {
   rule: string;
@@ -31,7 +32,12 @@ export interface Finding {
   at?: number;
 }
 
-const SAMPLES = 60;
+const DEFAULT_FPS = 60;
+
+export interface LintOptions {
+  /** Playback rate whose exact delivered instants must be inspected. */
+  fps?: number;
+}
 
 /** Speed variation permitted while planted before it reads as skating. */
 const SLIP_THRESHOLD = 0.25;
@@ -54,20 +60,44 @@ const OVERSHOOT_SAMPLES = 2.5;
 // so the two cannot drift apart on what "planted" means. What stays here is the
 // judgement: how much a planted foot may vary before it reads as skating.
 
-export function lint(ch: Character): Finding[] {
+export function lint(ch: Character, o: LintOptions = {}): Finding[] {
   // One pass of frames feeds every rule. Posing the scene per rule, per part,
   // per sample is how a 13-part rig ended up walking its own tree hundreds of
   // times for a single lint.
-  const frames = sampleFrames(ch, SAMPLES);
+  const times = playbackTimes(ch.duration, o.fps ?? DEFAULT_FPS);
+  // A finite SVG holds its exact 100% pose after playback. Video does not add a
+  // duplicate endpoint frame, but lint must still inspect the held end card.
+  if (ch.once) times.push(1);
+  const frames = times.map((t) => frameAt(ch, t));
   return [
+    ...deliveryChecks(ch),
     // A film is allowed to end somewhere other than where it began. That is not
     // a seam, it is the plot.
     ...(ch.once ? [] : loopSeam(ch)),
     ...swapChecks(ch, frames),
     ...groundChecks(ch, frames),
     ...viewBoxCheck(ch, frames),
-    ...kinematics(ch),
+    ...kinematics(ch, times),
   ];
+}
+
+/** Delivery degradations that are correct but expensive and easy to miss. */
+function deliveryChecks(ch: Character): Finding[] {
+  const out: Finding[] = [];
+  for (const node of ch.nodes()) {
+    node.tracks.forEach((track, layer) => {
+      const reason = transformBakeReason(track);
+      if (!reason) return;
+      out.push({
+        rule: 'baked-transform',
+        severity: 'warning',
+        part: node.path,
+        message: 'transform channels use incompatible timing and will be sampled instead of emitted exactly',
+        detail: `layer ${layer}: ${reason}; align key times/easings or put the gestures in separate animate() layers`,
+      });
+    });
+  }
+  return out;
 }
 
 /**
@@ -93,7 +123,7 @@ function swapChecks(ch: Character, frames: Frame[]): Finding[] {
     const everShown = new Set<string>();
 
     for (const frame of frames) {
-      const on = children.filter((c) => netPose(frame.pose.get(c.path)).opacity > 0.5);
+      const on = children.filter((c) => nodePose(c, frame.pose.get(c.path)).opacity > 0.5);
       for (const c of on) everShown.add(c.name);
       if (on.length === 1) continue;
       out.push({
@@ -145,7 +175,13 @@ function loopSeam(ch: Character): Finding[] {
       // demanding an exactness the compiled file does not itself preserve would
       // reject correct motion — the same 0.4 degrees a baked curve is allowed to
       // differ by cannot simultaneously be a defect when an author leaves it.
-      if (Math.abs(a[name] - b[name]) <= EPSILON[name]) continue;
+      // Full turns are the same visual orientation. Treating 0 -> -360 as an
+      // open seam blocked the loader's deliberately continuous spinner even
+      // though its first and last rendered poses are identical.
+      const delta = name === 'rotate'
+        ? ((b[name] - a[name] + 180) % 360 + 360) % 360 - 180
+        : b[name] - a[name];
+      if (Math.abs(delta) <= EPSILON[name]) continue;
       out.push({
         rule: 'loop-seam',
         severity: 'error',
@@ -228,7 +264,7 @@ function groundChecks(ch: Character, frames: Frame[]): Finding[] {
             part: node.path,
             message: 'planted contact point changes speed, which reads as the foot skating',
             detail:
-              `speed deviates ${(worst * 100).toFixed(0)}% from the median at t=${(worstAt / SAMPLES).toFixed(2)} ` +
+              `speed deviates ${(worst * 100).toFixed(0)}% from the median at t=${frames[worstAt].t.toFixed(2)} ` +
               `(limit ${(SLIP_THRESHOLD * 100).toFixed(0)}%); ground speed is ${median.toFixed(2)} units/sample ` +
               `over ${best.length} planted samples`,
           });
@@ -273,7 +309,10 @@ function viewBoxCheck(ch: Character, frames: Frame[]): Finding[] {
  * They read the same measurement pass the motion sheet and the variants overlay
  * read, so a diagnostic and the picture that would show it cannot disagree.
  */
-function kinematics(ch: Character): Finding[] {
+function kinematics(ch: Character, times: number[]): Finding[] {
+  // A film shorter than one delivery interval has one visible sample and no
+  // measurable velocity. Structural checks still inspect that delivered frame.
+  if (times.length < 2) return [];
   // One walk of the shape tree, shared with the measurement pass. Asking for the
   // ink twice — once to decide what is worth measuring, once inside `trackParts`
   // — cost up to half of everything these rules added on a path-heavy scene.
@@ -283,7 +322,7 @@ function kinematics(ch: Character): Finding[] {
 
   const [, , vw, vh] = ch.viewBox;
   const floor = Math.hypot(vw, vh) * MOVES_AT_ALL;
-  const report = trackParts(ch, { parts, samples: SAMPLES, corners });
+  const report = trackParts(ch, { parts, times, corners });
 
   const out: Finding[] = [];
   for (const p of report.parts) {

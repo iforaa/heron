@@ -4,13 +4,33 @@
   "description": "Author character animation in code and compile it for SVG, Lottie or video. Built for agents.",
   "type": "module",
   "bin": {
-    "heron": "./src/cli.ts"
+    "heron": "./dist/cli.js"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "SKILL.md",
+    "docs/*.md",
+    "docs/crane.svg",
+    "docs/gopher.svg",
+    "docs/tenfore.svg",
+    "docs/tenfore-sheet.png",
+    "docs/walk-sheet.png"
+  ],
+  "engines": {
+    "node": ">=22.12"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts",
+    "prepack": "pnpm build",
     "crane": "node src/cli.ts build examples/crane.ts -o out/crane.svg",
     "stairs": "node src/cli.ts build examples/crane-stairs.ts -o out/crane-stairs.svg -w 1400",
     "family": "node src/cli.ts build examples/crane-family.ts -o out/crane-family.svg -w 1500",
@@ -19,6 +39,17 @@
   "license": "MIT",
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
+    "fast-xml-parser": "^5.10.1",
     "opentype.js": "^2.0.0"
+  },
+  "devDependencies": {
+    "@fontsource/noto-sans": "^5.3.0",
+    "@fontsource/noto-sans-symbols-2": "^5.3.0",
+    "@types/node": "^26.1.2",
+    "@types/opentype.js": "^1.3.10",
+    "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "canvaskit-wasm": "^0.41.1"
   }
 }

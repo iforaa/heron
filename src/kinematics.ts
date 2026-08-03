@@ -12,7 +12,7 @@ import {
   sampled, type Channel, type Character, type Node, type Vec2,
 } from './scene.ts';
 import {
-  apply, frameAt, invert, netPose, type Frame, type TrackSnapshot,
+  apply, frameAt, invert, nodePose, type Frame, type TrackSnapshot,
 } from './timeline.ts';
 
 const DEG = 180 / Math.PI;
@@ -166,7 +166,7 @@ export function solveTwoBone(o: TwoBoneOptions): TwoBoneSolution {
 
 export type ReachTarget =
   | Vec2
-  | ((t: number) => Vec2)
+  | ((t: number, frame: Frame) => Vec2)
   | {
       /** Scene part whose pivot/contact or explicit point is the target. */
       part: string;
@@ -229,20 +229,24 @@ export function reach(ch: Character, o: ReachOptions): Reach {
   if (!lowerNode.path.startsWith(`${upperNode.path}.`)) {
     throw new Error(`heron: reach() lower part "${lowerNode.path}" is not inside "${upperNode.path}"`);
   }
-  const [upperLength] = o.lengths;
-  const restJoint: Vec2 = [upperNode.pivot[0], upperNode.pivot[1] + upperLength];
-  if (Math.hypot(lowerNode.pivot[0] - restJoint[0], lowerNode.pivot[1] - restJoint[1]) > 1e-6) {
-    throw new Error(
-      `heron: reach() expects a positive-Y rest chain, but "${lowerNode.path}" pivots at`
-      + ` [${lowerNode.pivot}] instead of [${restJoint}]`,
-    );
+  // A traced joint will almost never land on a mathematically perfect vertical.
+  // Measure its rest direction and express the analytic +Y solution relative to
+  // that direction instead of rejecting the measured rig.
+  const restVector: Vec2 = [
+    lowerNode.pivot[0] - upperNode.pivot[0],
+    lowerNode.pivot[1] - upperNode.pivot[1],
+  ];
+  if (Math.hypot(...restVector) < EPSILON) {
+    throw new Error(`heron: reach() chain pivots "${upperNode.path}" and "${lowerNode.path}" coincide`);
   }
+  // SVG's positive rotation sends +Y toward -X, hence the minus on x.
+  const restUpper = Math.atan2(-restVector[0], restVector[1]) * DEG;
 
   // The union is discriminated once, into one shape: a function of the frame.
   const targetAt: (t: number, frame: Frame) => Vec2 = (() => {
     if (typeof o.target === 'function') {
       const fn = o.target;
-      return (t: number) => fn(t);
+      return (t: number, frame: Frame) => fn(t, frame);
     }
     if (Array.isArray(o.target)) {
       const point = o.target;
@@ -285,8 +289,10 @@ export function reach(ch: Character, o: ReachOptions): Reach {
     // the analytic answer minus what the part is authored to do on its own.
     got = {
       solution,
-      upper: wrapDegrees(solution.upper - netPose(frame.pose.get(upperNode.path)).rotate),
-      lower: wrapDegrees(solution.lower - netPose(frame.pose.get(lowerNode.path)).rotate),
+      upper: wrapDegrees(
+        solution.upper - restUpper - nodePose(upperNode, frame.pose.get(upperNode.path)).rotate,
+      ),
+      lower: wrapDegrees(solution.lower - nodePose(lowerNode, frame.pose.get(lowerNode.path)).rotate),
       target,
     };
     cache.set(t, got);

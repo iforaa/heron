@@ -18,9 +18,10 @@
 import { type Channel, type Character, type ChannelName, type Node, type Track, CHANNELS, NEUTRAL, activeChannels } from './scene.ts';
 import { channelAt } from './timeline.ts';
 import type { Easing } from './easing.ts';
+import { dashOffset, strokeLength } from './geometry.ts';
 import {
-  block, cssClass, dashOffset, definitionsSvg, listShapes, nodeSvg, outputSize, renderContext,
-  round, strokeLength, svgOpen,
+  block, cssClass, definitionsSvg, listShapes, nodeSvg, outputSize, renderContext,
+  round, svgOpen,
 } from './render.ts';
 
 /** Maximum deviation permitted when refitting a sampled curve, per channel. */
@@ -28,6 +29,8 @@ export const EPSILON = {
   rotate: 0.4,   // degrees
   x: 0.15,       // user units
   y: 0.15,
+  skewX: 0.4,    // degrees
+  skewY: 0.4,
   scaleX: 0.004,
   scaleY: 0.004,
   opacity: 0.01,
@@ -38,6 +41,18 @@ type Name = ChannelName;
 
 export interface CompileReport {
   parts: { path: string; layer: number; mode: 'exact' | 'baked'; keyframes: number; reason?: string }[];
+  morphs: { index: number; keyframes: number }[];
+  warnings: string[];
+  /** Evidence about the artifact actually serialized, not only the evaluator. */
+  certification: {
+    status: 'within-epsilon';
+    artifact: 'serialized-css-keyframes';
+    exactChannels: number;
+    bakedChannels: number;
+    replayChecks: number;
+    maxError: Partial<Record<ChannelName, number>>;
+    epsilon: typeof EPSILON;
+  };
 }
 
 /**
@@ -65,6 +80,11 @@ function bakeReason(chans: Channel[]): string | null {
  *  every channel within EPSILON under linear interpolation. */
 function fit(times: number[], series: Map<Name, number[]>): number[] {
   const keep = new Set<number>([0, times.length - 1]);
+  // Keep half the published budget in reserve for interpolation between the
+  // verification samples and for numeric serialization. Spending the whole
+  // EPSILON at sampled instants let a long camera move cross the limit between
+  // two of them even after its keyframe percentages were serialized exactly.
+  const FIT_BUDGET = 0.5;
 
   const worst = (lo: number, hi: number): { idx: number; err: number } => {
     let idx = -1;
@@ -83,7 +103,7 @@ function fit(times: number[], series: Map<Name, number[]>): number[] {
   const split = (lo: number, hi: number) => {
     if (hi - lo < 2) return;
     const { idx, err } = worst(lo, hi);
-    if (idx < 0 || err <= 1) return;
+    if (idx < 0 || err <= FIT_BUDGET) return;
     keep.add(idx);
     split(lo, idx);
     split(idx, hi);
@@ -105,6 +125,8 @@ function transformCss(vals: Partial<Record<Name, number>>, names: Name[]): strin
     parts.push(`translate(${round(vals.x ?? 0)}px, ${round(vals.y ?? 0)}px)`);
   }
   if (names.includes('rotate')) parts.push(`rotate(${round(vals.rotate ?? 0)}deg)`);
+  if (names.includes('skewX')) parts.push(`skewX(${round(vals.skewX ?? 0)}deg)`);
+  if (names.includes('skewY')) parts.push(`skewY(${round(vals.skewY ?? 0)}deg)`);
   if (names.includes('scaleX') || names.includes('scaleY')) {
     parts.push(`scale(${round(vals.scaleX ?? 1)}, ${round(vals.scaleY ?? 1)})`);
   }
@@ -159,12 +181,47 @@ const GROUP_OF = new Map<Name, Group>(
 );
 
 /**
+ * Explains when several authored transform channels cannot remain exact CSS.
+ *
+ * This is public to diagnostics so `heron lint` and `heron check` can disclose
+ * the degradation before a build report scrolls past. A single procedural
+ * channel is intentionally omitted: sampling it is its declared representation,
+ * whereas two independently authored keyed channels unexpectedly forcing one
+ * another through the fitter is the authoring trap this diagnostic names.
+ */
+export function transformBakeReason(track: Track): string | null {
+  const names = activeChannels(track).filter((name) => GROUP_OF.get(name) === GROUPS[0]);
+  if (names.length < 2) return null;
+  const channels = names.map((name) => track[name]!);
+  // A deliberately procedural transform is already authored for sampling. The
+  // surprise is losing exact keyed data: either by mixing it with a function or
+  // by giving several keyed channels incompatible timing.
+  if (channels.every((channel) => channel.kind === 'fn')) return null;
+  return bakeReason(channels);
+}
+
+/**
  * A keyframe's timing function, or nothing when CSS's default already says it.
  * The last keyframe never takes one — there is no segment after it to ease.
  * Part of the parity contract, so it is stated once for transforms and morphs.
  */
 function easeSuffix(ease: Easing, last: boolean): string {
   return !last && ease.css !== 'linear' ? ` animation-timing-function: ${ease.css};` : '';
+}
+
+/**
+ * A keyframe percentage precise enough that serialization cannot spend the
+ * compiler's geometric error budget.
+ *
+ * Two decimal places of *percent* looked precise and was not: on a long camera
+ * move, moving a fitted key by 0.005% moved the shipped drawing many times
+ * farther than EPSILON.x. Ten decimal places of percent put the time error below
+ * 5e-13 of a cycle while still producing ordinary, portable CSS numbers.
+ */
+function percentage(t: number): string {
+  return (t * 100).toFixed(10)
+    .replace(/(\.[0-9]*?[1-9])0+$/, '$1')
+    .replace(/\.0+$/, '');
 }
 
 interface Emitted {
@@ -187,13 +244,23 @@ function keyframeLines(
 
   if (!reason) {
     const ref = chans[0] as Extract<Channel, { kind: 'keys' }>;
-    const lines = ref.keys.map((k, i) => {
+    // CSS synthesizes an omitted 0%/100% key from the element's underlying
+    // style; Heron's evaluator holds the nearest authored value. Name both
+    // endpoints explicitly so a channel beginning at t=.5 does not animate from
+    // its neutral rest pose for the first half of browser playback.
+    const timeline = [...ref.keys];
+    if (timeline[0].t > 0) timeline.unshift({ ...timeline[0], t: 0 });
+    if (timeline[timeline.length - 1].t < 1) {
+      timeline.push({ ...timeline[timeline.length - 1], t: 1 });
+    }
+    const lines = timeline.map((k, i) => {
       const vals: Partial<Record<Name, number>> = {};
       for (const n of names) vals[n] = channelAt(track[n]!, k.t);
-      const timing = easeSuffix(k.ease, i === ref.keys.length - 1);
-      return `      ${round(k.t * 100, 2)}% { ${body(vals)}${timing} }`;
+      const timing = easeSuffix(k.ease, i === timeline.length - 1);
+      return `      ${percentage(k.t)}% { ${body(vals)}${timing} }`;
     });
     report.parts.push({ path, layer, mode: 'exact', keyframes: lines.length });
+    report.certification.exactChannels += names.length;
     return { lines, count: lines.length };
   }
 
@@ -202,17 +269,61 @@ function keyframeLines(
   // points* while the curve between them drifts further, which would make
   // EPSILON a claim the output does not actually honour.
   const requested = Math.max(48, ...chans.map((c) => (c.kind === 'fn' ? c.samples : 0)));
-  const n = Math.max(256, requested * 4);
+  // Eight verification intervals per requested sample keep the chord between
+  // adjacent samples inside the reserved half-budget on the steepest production
+  // camera move. Four still allowed 0.19 units of curvature between retained
+  // points against an x budget of 0.15, even when every point was kept.
+  const n = Math.max(512, requested * 8);
   const times = Array.from({ length: n + 1 }, (_, i) => i / n);
   const series = new Map<Name, number[]>();
-  for (const name of names) series.set(name, times.map((t) => channelAt(track[name]!, t)));
+  for (const name of names) {
+    const values = times.map((t) => channelAt(track[name]!, t));
+    const bad = values.findIndex((value) => !Number.isFinite(value));
+    if (bad >= 0) {
+      throw new Error(
+        `heron: part "${path || '(root)'}" layer ${layer} channel ${name}`
+        + ` returned ${values[bad]} at t=${times[bad]}`,
+      );
+    }
+    series.set(name, values);
+  }
 
-  const lines = fit(times, series).map((i) => {
+  const retained = fit(times, series);
+  // Verify what is actually serialized: rounded CSS values at rounded percent
+  // positions, linearly replayed between retained keys. This is the last seam
+  // before disk, and checking ideal floating-point keys here would certify a
+  // different artifact than the one a browser receives.
+  for (const [name, values] of series) {
+    let segment = 0;
+    for (let i = 0; i < times.length; i++) {
+      while (segment < retained.length - 2 && i > retained[segment + 1]) segment++;
+      const ia = retained[segment];
+      const ib = retained[Math.min(segment + 1, retained.length - 1)];
+      const ta = Number(percentage(times[ia])) / 100;
+      const tb = Number(percentage(times[ib])) / 100;
+      const u = (times[i] - ta) / (tb - ta || 1);
+      const a = round(values[ia]);
+      const b = round(values[ib]);
+      const replayed = a + (b - a) * Math.max(0, Math.min(1, u));
+      const error = Math.abs(replayed - values[i]);
+      report.certification.replayChecks++;
+      report.certification.maxError[name] = Math.max(report.certification.maxError[name] ?? 0, error);
+      if (error > EPSILON[name] + 1e-9) {
+        throw new Error(
+          `heron: serialized ${path || '(root)'}.${name} exceeds EPSILON at t=${times[i]}`
+          + ` (${Math.abs(replayed - values[i])} > ${EPSILON[name]})`,
+        );
+      }
+    }
+  }
+
+  const lines = retained.map((i) => {
     const vals: Partial<Record<Name, number>> = {};
     for (const [name, arr] of series) vals[name] = arr[i];
-    return `      ${round(times[i] * 100, 2)}% { ${body(vals)} }`;
+    return `      ${percentage(times[i])}% { ${body(vals)} }`;
   });
   report.parts.push({ path, layer, mode: 'baked', keyframes: lines.length, reason });
+  report.certification.bakedChannels += names.length;
   return { lines, count: lines.length };
 }
 
@@ -228,10 +339,16 @@ function emitLayer(
   node: Node, layer: number, duration: number, repeat: string, report: CompileReport,
 ): Emitted | null {
   const track = node.tracks[layer];
+  if (repeat.startsWith('1 ') && track.phase !== undefined) {
+    throw new Error(
+      `heron: part "${node.path || '(root)'}" layer ${layer} uses phase in a once-only scene;`
+      + ' CSS delay cannot wrap a finite animation the way Heron phase does',
+    );
+  }
   const active = activeChannels(track);
   if (active.length === 0) return null;
 
-  const delay = track.phase ? ` ${round(-track.phase * duration, 4)}s` : '';
+  const delay = track.phase ? ` ${round(-track.phase * duration, 9)}s` : '';
   const animations: string[] = [];
   const keyframes: string[] = [];
 
@@ -265,7 +382,20 @@ export function compile(
   ch: Character, opts: CompileOptions = {},
 ): { svg: string; report: CompileReport; animated: string[] } {
   const { width, height } = outputSize(ch, opts.width);
-  const report: CompileReport = { parts: [] };
+  const report: CompileReport = {
+    parts: [],
+    morphs: [],
+    warnings: [],
+    certification: {
+      status: 'within-epsilon',
+      artifact: 'serialized-css-keyframes',
+      exactChannels: 0,
+      bakedChannels: 0,
+      replayChecks: 0,
+      maxError: {},
+      epsilon: EPSILON,
+    },
+  };
 
   const rules: string[] = [];
   const frames: string[] = [];
@@ -297,10 +427,16 @@ export function compile(
     const lines = shape.morph.keys.map((key, i, keys) => {
       const d = key.d.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       const timing = easeSuffix(key.ease, i === keys.length - 1);
-      return `      ${round(key.t * 100, 2)}% { d: path("${d}");${timing} }`;
+      return `      ${percentage(key.t)}% { d: path("${d}");${timing} }`;
     });
     frames.push(`    @keyframes ${frameName} {\n${lines.join('\n')}\n    }`);
     animated.push('.' + className);
+    report.morphs.push({ index: morphIndex - 1, keyframes: lines.length });
+  }
+  if (report.morphs.length) {
+    report.warnings.push(
+      'CSS path morphing uses d: path(...); verify the target browser set or retain a non-morph fallback',
+    );
   }
 
   // transform-box: view-box makes transform-origin absolute in viewBox space,

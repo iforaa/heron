@@ -10,8 +10,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  character, part, field, limb, circle, line, arc, keys, sampled, compile, renderStatic, lint, easeOut, easeInOut,
-  spring, settleTime, criticalDamping, score, cueSheet, during, within, swell, shift, hold,
+  character, part, field, limb, swap, circle, line, arc, keys, sampled, compile, renderStatic, lint, easeOut, easeInOut,
+  spring, settleTime, criticalDamping, score, cueSheet, during, within, withinAdditive, swell, shift, hold,
   noise, aim, jump, journey, walkCycle, channelAt, netPose, evaluate, frameAt,
   strokeLength, pathLength,
   type Vec2,
@@ -81,10 +81,16 @@ test('a score divides the cycle, and refuses one that does not fit', () => {
   assert.ok(Math.abs(s.progress('b', 0.35) - 0.5) < 1e-12, 'progress is local to the beat');
   assert.equal(s.progress('b', 0.1), 0);
   assert.equal(s.progress('b', 0.9), 1);
+  assert.deepEqual(s.span('a', 'b'), { name: 'a..b', from: 0, to: 0.5, seconds: 5 });
+  assert.deepEqual(s.slice('b', 0.2, 0.6), { name: 'b[0.2..0.6]', from: 0.26, to: 0.38, seconds: 1.2 });
 
   assert.throws(() => score(2, [['a', 1], ['b', 2]]), /past a 2s cycle/);
   assert.throws(() => score(2, [['a', 1]]), /unaccounted for/);
+  assert.throws(() => score(2, [['a', -1], ['rest', 0]]), /at least zero/);
+  assert.throws(() => score(2, [['a', 1], ['a', 1]]), /duplicate beat/);
   assert.throws(() => s.at('nope'), /no beat "nope"/);
+  assert.throws(() => s.slice('a', 0.8, 0.2), /0 <= from < to <= 1/);
+  assert.throws(() => s.time('a', 1.2), /progress must be inside/);
 });
 
 test('during() places a curve in local time and holds its ends outside the beat', () => {
@@ -145,6 +151,20 @@ test('within() preserves procedural detail inside a narrow window', () => {
   }
 });
 
+test('withinAdditive returns a separate layer to neutral outside its window', () => {
+  const b = score(4, [['before', 1], ['gesture', 2], ['after', 1]]).at('gesture');
+  const placed = withinAdditive(b, keys([[0, 12], [1, 30]]), {
+    neutral: 0, attack: 0.1, release: 0.2,
+  });
+  assert.equal(channelAt(placed, 0), 0);
+  assert.equal(channelAt(placed, 1), 0);
+  assert.equal(channelAt(placed, b.from), 0);
+  assert.equal(channelAt(placed, b.to), 0);
+  assert.equal(channelAt(placed, b.from + (b.to - b.from) * 0.1), 12);
+  assert.ok(Math.abs(channelAt(placed, b.from + (b.to - b.from) * 0.8) - 30) < 1e-9);
+  assert.equal(placed.kind, 'keys', 'keyed input remains exact CSS keyframes');
+});
+
 test('within() refuses an empty or out-of-cycle window', () => {
   const local = keys([[0, 0], [1, 1]]);
   assert.throws(() => within({ name: 'empty', from: 0.5, to: 0.5, seconds: 0 }, local), /positive window/);
@@ -177,6 +197,28 @@ test('a cue sheet places channels, shapes and staggered instances', () => {
   const last = film.stagger('reveal', 3, 4, { spread: 0.5 });
   assert.equal(last.from, 0.5);
   assert.equal(last.to, 0.75);
+});
+
+test('swap cuts and playback reject times they cannot represent', () => {
+  const scene = character('swap', { viewBox: [0, 0, 20, 20] }, () => {
+    swap('face', {
+      open: () => circle({ cx: 5, cy: 5, r: 2 }),
+      shut: () => circle({ cx: 5, cy: 5, r: 1 }),
+    });
+  });
+  const face = scene.swap('face');
+  assert.throws(() => face.cut([[-0.1, 'open']]), /inside 0..1/);
+  assert.throws(() => face.cut([[0.2, 'open'], [0.2, 'shut']]), /two cuts/);
+  assert.throws(() => face.play({ from: 0.8, to: 0.2 }), /from < to/);
+  assert.throws(() => face.play({ fps: 0 }), /positive finite/);
+});
+
+test('limb options fail visibly instead of ignoring plausible misspellings', () => {
+  assert.throws(
+    () => character('bad-limb', { viewBox: [0, 0, 20, 20] }, () =>
+      limb('leg', { hip: [1, 1], segments: [4, 4], stroke: '#000', width: 3 } as any)),
+    /unknown option width.*use widths/,
+  );
 });
 
 test('a cue sheet validates each window without rejecting overlaps or gaps', () => {

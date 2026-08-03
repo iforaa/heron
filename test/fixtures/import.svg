@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" role="img">
+  <title>Import fixture</title>
+  <desc>Ordinary grouped vector art with no runtime dependencies.</desc>
+  <g id="body" fill="#17202a">
+    <circle cx="36" cy="40" r="18"/>
+    <path d="M50 32 L92 18 L70 48 Z"/>
+  </g>
+</svg>

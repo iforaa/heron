@@ -5,6 +5,29 @@ import {
   character, circle, keys, lint, part, sampled, type Character,
 } from '../src/index.ts';
 
+test('lint discloses transform channels that force one another through baking', () => {
+  const scene = character('timing', { viewBox: [0, 0, 100, 100], duration: 1, once: true }, () => {
+    part('body', { pivot: [0, 0] }, () => circle({ cx: 20, cy: 20, r: 4 }));
+  });
+  scene.part('body').animate({
+    x: keys([[0, 0], [1, 20]]),
+    y: keys([[0, 0], [0.5, 10], [1, 0]]),
+  });
+  const warning = lint(scene).find((finding) => finding.rule === 'baked-transform');
+  assert.ok(warning);
+  assert.equal(warning.severity, 'warning');
+  assert.match(warning.detail ?? '', /separate animate\(\) layers/);
+
+  const exact = character('exact', { viewBox: [0, 0, 100, 100], duration: 1, once: true }, () => {
+    part('body', { pivot: [0, 0] }, () => circle({ cx: 20, cy: 20, r: 4 }));
+  });
+  exact.part('body').animate({
+    x: keys([[0, 0], [1, 20]]),
+    y: keys([[0, 0], [1, 10]]),
+  });
+  assert.ok(!lint(exact).some((finding) => finding.rule === 'baked-transform'));
+});
+
 /** A foot on the ground, either stepping properly or sliding at one speed. */
 function walker(sliding: boolean): Character {
   const scene = character('w', { viewBox: [0, 0, 300, 120], duration: 1, ground: 100 }, () => {
@@ -139,4 +162,20 @@ test('no soft diagnostic can fail a build', () => {
       if (soft.has(f.rule)) assert.equal(f.severity, 'info', `${f.rule} must stay advisory`);
     }
   }
+});
+
+test('lint inspects the delivered frame grid and catches a one-frame pop', () => {
+  const scene = character('one-frame', {
+    viewBox: [0, 0, 100, 100], duration: 1.1, once: true,
+  }, () => {
+    part('head', { pivot: [50, 50] }, () => circle({ cx: 50, cy: 50, r: 5 }));
+  });
+  const delivered = 5 / 11; // frame 5 at 10fps in a 1.1 second film
+  scene.part('head').animate({
+    x: keys([[0, 0], [0.453, 0], [delivered, 100], [0.456, 0], [1, 0]]),
+  });
+  assert.ok(
+    lint(scene, { fps: 10 }).some((finding) => finding.rule === 'out-of-view'),
+    'the exact visible frame must not fall between a fixed normalized lint grid',
+  );
 });

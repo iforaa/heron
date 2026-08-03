@@ -27,18 +27,23 @@ import { compile } from './compile.ts';
 import { round } from './render.ts';
 import type { Score } from './score.ts';
 
-interface Curve {
+export interface Curve {
   label: string;
+  path: string;
+  layer: number;
   channel: ChannelName;
   points: string;
+  values: number[];
   lo: number;
   hi: number;
 }
 
 /** Every animated channel, sampled and drawn as a polyline in its own box. */
-function curves(ch: Character): Curve[] {
+export function curves(ch: Character, n = 240): Curve[] {
+  if (!Number.isInteger(n) || n < 2 || n > 100_000) {
+    throw new Error(`heron: curves() sample count must be an integer from 2 to 100000, got ${n}`);
+  }
   const out: Curve[] = [];
-  const n = 240;
   for (const node of ch.nodes()) {
     node.tracks.forEach((track, layer) => {
       for (const name of activeChannels(track)) {
@@ -53,8 +58,11 @@ function curves(ch: Character): Curve[] {
           .join(' ');
         out.push({
           label: `${node.path || '(root)'}${node.tracks.length > 1 ? ` #${layer}` : ''} · ${name}`,
+          path: node.path,
+          layer,
           channel: name,
           points,
+          values: vals,
           lo,
           hi,
         });
@@ -64,10 +72,30 @@ function curves(ch: Character): Curve[] {
   return out;
 }
 
+export interface CurveSample extends Omit<Curve, 'points' | 'values'> {
+  values: number[];
+}
+
+/** Exact values at several instants, plus the full-cycle range for context. */
+export function sampleCurves(ch: Character, times: number[], n = 240): CurveSample[] {
+  if (!times.length || times.some((time) => !Number.isFinite(time) || time < 0 || time > 1)) {
+    throw new Error('heron: curve sample times must be finite values inside 0..1');
+  }
+  const ranges = curves(ch, n);
+  return ranges.map(({ points: _points, values: _values, ...curve }) => {
+    const track = ch.find(curve.path)?.tracks[curve.layer];
+    const channel = track?.[curve.channel];
+    if (!channel) throw new Error(`heron: curve source disappeared for ${curve.label}`);
+    return { ...curve, values: times.map((time) => channelAt(channel, time)) };
+  });
+}
+
 const TINT: Record<ChannelName, string> = {
   rotate: '#3ba064',
   x: '#2f7fd0',
   y: '#c2571f',
+  skewX: '#d1498b',
+  skewY: '#d1498b',
   scaleX: '#8a52c4',
   scaleY: '#8a52c4',
   opacity: '#5a6b74',

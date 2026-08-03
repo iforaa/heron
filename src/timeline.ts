@@ -15,8 +15,12 @@ export type NodePose = Record<ChannelName, number>;
 
 export const REST: NodePose = { ...NEUTRAL };
 
-/** One entry per part, holding one pose per layer of motion on it. */
+/** One entry per part, holding one pose per authored layer of motion on it. */
 export type Pose = Map<string, NodePose[]>;
+
+export function restPose(node: Node): NodePose {
+  return { ...REST, ...node.transform };
+}
 
 /** Value of one channel at cycle time t (0..1). */
 export function channelAt(ch: Channel, t: number): number {
@@ -66,6 +70,8 @@ export function netPose(poses: NodePose[] | undefined): NodePose {
     out.rotate += p.rotate;
     out.x += p.x;
     out.y += p.y;
+    out.skewX += p.skewX;
+    out.skewY += p.skewY;
     out.scaleX *= p.scaleX;
     out.scaleY *= p.scaleY;
     out.opacity *= p.opacity;
@@ -74,6 +80,11 @@ export function netPose(poses: NodePose[] | undefined): NodePose {
     out.draw = p.draw;
   }
   return out;
+}
+
+/** Static rest state composed with the net authored motion for inspection. */
+export function nodePose(node: Node, poses: NodePose[] | undefined): NodePose {
+  return netPose([restPose(node), ...(poses ?? [])]);
 }
 
 // --- matrices ----------------------------------------------------------------
@@ -117,13 +128,13 @@ export function invert(m: Mat): Mat {
 }
 
 /**
- * A part's local transform: translate, then rotate and scale about the pivot.
+ * A part's local transform: translate, then rotate, skew and scale about the pivot.
  *
  * This order is fixed and must stay identical to the CSS the compiler emits
- * (`transform: translate() rotate() scale()` with `transform-origin` at the
+ * (`transform: translate() rotate() skewX() skewY() scale()` with `transform-origin` at the
  * pivot), because that equivalence is what makes a snapshot trustworthy.
  */
-function localMatrix(pose: NodePose, pivot?: Vec2): Mat {
+export function localMatrix(pose: NodePose, pivot?: Vec2): Mat {
   const [px, py] = pivot ?? [0, 0];
   const rad = (pose.rotate * Math.PI) / 180;
   const cos = Math.cos(rad);
@@ -131,9 +142,11 @@ function localMatrix(pose: NodePose, pivot?: Vec2): Mat {
   const t: Mat = [1, 0, 0, 1, pose.x, pose.y];
   const toPivot: Mat = [1, 0, 0, 1, px, py];
   const rot: Mat = [cos, sin, -sin, cos, 0, 0];
+  const skewX: Mat = [1, 0, Math.tan((pose.skewX * Math.PI) / 180), 1, 0, 0];
+  const skewY: Mat = [1, Math.tan((pose.skewY * Math.PI) / 180), 0, 1, 0, 0];
   const scl: Mat = [pose.scaleX, 0, 0, pose.scaleY, 0, 0];
   const fromPivot: Mat = [1, 0, 0, 1, -px, -py];
-  return mul(mul(mul(mul(t, toPivot), rot), scl), fromPivot);
+  return mul(mul(mul(mul(mul(mul(t, toPivot), rot), skewX), skewY), scl), fromPivot);
 }
 
 /**
@@ -185,7 +198,7 @@ export function frameAt(ch: Character, t: number, tracks?: TrackSnapshot): Frame
   }
   const matrices = new Map<string, Mat>();
   const walk = (node: Node, parent: Mat) => {
-    const m = mul(parent, stackMatrix(pose.get(node.path), node.pivot));
+    const m = mul(mul(parent, localMatrix(restPose(node), node.pivot)), stackMatrix(pose.get(node.path), node.pivot));
     matrices.set(node.path, m);
     for (const item of node.content) if ('node' in item) walk(item.node, m);
   };

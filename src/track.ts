@@ -20,8 +20,9 @@
 
 import type { Character, Node, Vec2 } from './scene.ts';
 import type { CueSheet, Score } from './score.ts';
-import { type Frame, frameAt, netPose } from './timeline.ts';
-import { type Box, boxOfCorners, mergeBoxes, round, subtreeCorners } from './render.ts';
+import { type Frame, frameAt, nodePose } from './timeline.ts';
+import { type Box, boxOfCorners, mergeBoxes, subtreeCorners } from './geometry.ts';
+import { round } from './render.ts';
 
 /** Which stretch of the cycle was measured. */
 export type TrackWindow =
@@ -152,6 +153,8 @@ export interface TrackOptions {
   /** Extra parts measured only for clearance against the tracked ones. */
   compare?: Array<TrackRequest | string>;
   samples?: number;
+  /** Exact normalized instants to measure, for delivery-frame diagnostics. */
+  times?: number[];
   window?: TrackWindow;
   timeline?: Score | CueSheet;
   /** One cell per cue: sample each cue's own window densely. */
@@ -255,13 +258,16 @@ function pointOf(
 }
 
 /** Visibility as the viewer sees it: this part's opacity times every ancestor's. */
-function chainOpacity(frame: Frame, path: string, memo: Map<string, number>): number {
+function chainOpacity(
+  frame: Frame, path: string, memo: Map<string, number>, nodes: Map<string, Node>,
+): number {
   const got = memo.get(path);
   if (got !== undefined) return got;
   const cut = path.lastIndexOf('.');
   const parent = cut < 0 ? '' : path.slice(0, cut);
-  const own = netPose(frame.pose.get(path)).opacity;
-  const value = own * (path ? chainOpacity(frame, parent, memo) : 1);
+  const node = nodes.get(path);
+  const own = node ? nodePose(node, frame.pose.get(path)).opacity : 1;
+  const value = own * (path ? chainOpacity(frame, parent, memo, nodes) : 1);
   memo.set(path, value);
   return value;
 }
@@ -285,6 +291,24 @@ interface Slot {
 function slots(ch: Character, o: TrackOptions): { list: Slot[]; endpoints: 'inclusive' | 'exclusive'; window: TrackReport['window'] } {
   const n = Math.max(2, o.samples ?? 24);
   const timeline = o.timeline;
+
+  if (o.times) {
+    if (o.perCue || o.window) {
+      throw new Error('heron: exact tracking times cannot be combined with a cue or range');
+    }
+    if (o.times.length < 2 || o.times.some((t) => !Number.isFinite(t) || t < 0 || t > 1)) {
+      throw new Error('heron: exact tracking times need at least two finite values inside 0..1');
+    }
+    const times = [...new Set(o.times)].sort((a, b) => a - b);
+    const endpoints = times[times.length - 1] === 1 ? 'inclusive' : 'exclusive';
+    return {
+      list: times.map((t, i) => ({
+        t, seconds: t * ch.duration, boundary: i === 0 || i === times.length - 1,
+      })),
+      endpoints,
+      window: { kind: 'cycle', from: 0, to: 1, seconds: ch.duration },
+    };
+  }
 
   if (o.perCue) {
     if (!timeline) throw new Error('heron: per-cue tracking needs an exported Score or CueSheet');
@@ -492,6 +516,7 @@ export function trackParts(ch: Character, o: TrackOptions): TrackReport {
 
   const { list, endpoints, window } = slots(ch, o);
   const cyclic = endpoints === 'exclusive';
+  const nodes = new Map(ch.nodes().map((node) => [node.path, node]));
 
   // The single pass. Everything below reads from what this collected.
   const posed = list.map((slot) => {
@@ -500,12 +525,10 @@ export function trackParts(ch: Character, o: TrackOptions): TrackReport {
     return {
       slot,
       points: all.map((target) => frame.point(target.node, target.local)),
-      visible: all.map((target) => chainOpacity(frame, target.node.path, memo) > 0.01),
+      visible: all.map((target) => chainOpacity(frame, target.node.path, memo, nodes) > 0.01),
       boxes: all.map((target) => boxOfCorners(corners.get(target.node.path), frame.matrices.get(target.node.path))),
     };
   });
-
-  const secondsPerSample = window.seconds / Math.max(1, list.length - (cyclic ? 0 : 1));
 
   // Compared parts are measured too, so their path can be drawn alongside and
   // the reader can see what the clearance number is a clearance from.
@@ -526,14 +549,22 @@ export function trackParts(ch: Character, o: TrackOptions): TrackReport {
       for (let i = lo + 1; i <= hi; i++) {
         const d = Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
         pathLength += d;
-        steps.push({ at: list[i].t, distance: d, seconds: secondsPerSample });
+        steps.push({
+          at: list[i].t,
+          distance: d,
+          seconds: Math.max(1e-12, list[i].seconds - list[i - 1].seconds),
+        });
       }
     }
     if (cyclic && visible[0] && visible[visible.length - 1] && visibleRuns.length === 1) {
       const last = points[points.length - 1];
       const d = Math.hypot(points[0][0] - last[0], points[0][1] - last[1]);
       pathLength += d;
-      steps.push({ at: 1, distance: d, seconds: secondsPerSample });
+      steps.push({
+        at: 1,
+        distance: d,
+        seconds: Math.max(1e-12, ch.duration - list[list.length - 1].seconds + list[0].seconds),
+      });
     }
 
     const speeds = steps.map((s) => s.distance / s.seconds);
@@ -546,7 +577,7 @@ export function trackParts(ch: Character, o: TrackOptions): TrackReport {
       holds.push({
         from: round(steps[lo].at, 4),
         to: round(steps[hi].at, 4),
-        seconds: round((hi - lo + 1) * secondsPerSample, 3),
+        seconds: round(steps.slice(lo, hi + 1).reduce((sum, step) => sum + step.seconds, 0), 3),
       });
     }
 
@@ -557,7 +588,7 @@ export function trackParts(ch: Character, o: TrackOptions): TrackReport {
           at: round(steps[i].at, 4),
           from: round(speeds[i - 1], 2),
           to: round(speeds[i], 2),
-          overSeconds: round(secondsPerSample, 4),
+          overSeconds: round(steps[i].seconds, 4),
         });
       }
     }

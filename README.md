@@ -30,13 +30,20 @@ with joints, and the CLI lets the agent look at what it made.
 ## The loop
 
 ```bash
+heron import logo.svg -o logo.ts         # preserve existing vector geometry and groups
+heron trace logo.png -o logo.ts          # measure raster-only geometry
+heron match logo.ts logo.png --json      # prove the rest pose matches its reference
 heron shapes crane.ts -o shapes.png      # one cell per run, to see which ink is which part
 heron sheet crane.ts -n 8 -o sheet.png   # eight poses tiled, as one image
+heron frames crane.ts -o frames --fps 30 # every playback frame, in readable sheet batches
 heron motion crane.ts --part legNear.foot # where one part went and how fast
 heron variants takes.ts --motion head    # the same scene under several parameters
 heron inspect crane.ts -t 0.3            # the same pose as numbers
+heron curves crane.ts --json             # every channel's range and several exact instants
 heron lint crane.ts                      # defects invisible in a still frame
+heron check crane.ts --fps 30 --json     # typecheck + compile + delivery-grid lint
 heron build crane.ts -o crane.svg        # the deliverable
+heron lottie film.ts -o film.json        # native mobile vector delivery
 heron video film.ts -o film.mp4 --fps 30 # optional raster delivery through ffmpeg
 ```
 
@@ -117,6 +124,11 @@ crane.part('legFar.thigh').animate({ ...gait.thigh, phase: 0.5 });
 A pivot is the joint's coordinate in the rest pose, written in the same space as
 the artwork — which is exactly what `transform-origin` needs, at every depth of
 the rig.
+
+Parts may also carry a static rest transform without manufacturing constant
+animation keys: `part('body', { pivot, transform: { x: 12, rotate: -4 } }, ...)`.
+Static transforms participate in world-space inspection and delivery but do not
+pollute animation reports.
 
 ## Reaching with two-bone IK
 
@@ -234,7 +246,18 @@ heron sheet film.ts --cues=runner,wipe -n 4 -o transition.png
 Each frame is labelled with cue-local progress and absolute seconds. Overlapping
 cues deliberately retain both labels.
 
-## Interchange and video
+For a frame-complete review, `frames` uses the exact same end-exclusive sample
+times as video delivery and splits them into sheets that keep each pose readable:
+
+```bash
+heron frames film.ts -o out/frames --fps 30 --per-sheet 12
+heron frames film.ts -o out/landing --fps 60 --range landing --per-sheet 8
+```
+
+`frames.json` maps every frame number and exact time to its sheet, row and
+column. Set `--per-sheet 1` when individual full-size frame files are preferable.
+
+## Interchange, Lottie and video
 
 `serializeScene()` produces a versioned JSON-safe scene IR. Authored keys,
 resources, rigs and path morphs remain structural; procedural closures are
@@ -245,9 +268,26 @@ const json = serializeScene(scene, { samples: 256 });
 const restored = parseScene(json);
 ```
 
-SVG remains the primary deliverable. When a commercial also needs raster media,
-the optional ffmpeg adapter evaluates exact Heron frames and can mux a
-soundtrack:
+For native mobile playback without a WebView, the Lottie backend maps Heron's
+part hierarchy, pivots, transform/opacity channels and stroke drawing to
+parented vector layers. An exported `Score` or `CueSheet` becomes Lottie
+markers. Procedural channels are sampled at the requested playback rate:
+
+```bash
+heron lottie film.ts -o film.json --fps 60 --check
+```
+
+The first backend deliberately refuses clips, masks, gradients, path morphs and
+skew instead of silently changing their appearance. Static filled/stroked paths,
+compound paths, translation/rotation/scale hierarchy, opacity and `draw`/Trim
+Paths are supported; this covers character rigs and logo performances such as
+`examples/crane-golf.ts`. `--check` uses Skia's independent Skottie player to
+rasterize representative frames and compare them with the SVG evaluator; a
+failed overlap gate does not write the JSON artifact.
+
+SVG remains the durable browser deliverable. When a commercial also needs
+raster media, the optional ffmpeg adapter evaluates exact Heron frames and can
+mux a soundtrack:
 
 ```bash
 heron video film.ts -o film.mp4 -w 1920 --fps 30 --audio soundtrack.wav
@@ -257,9 +297,10 @@ heron video film.ts -o film.mp4 -w 1920 --fps 30 --audio soundtrack.wav
 
 The evaluator (what `snapshot` shows you) and the compiled stylesheet (what the
 browser plays) must agree, or the feedback loop is lying. So the animatable
-channels are deliberately only what CSS can express — `rotate`, `x`, `y`,
-`scaleX`, `scaleY`, `opacity`, `draw` — and keyed compatible path geometry can
-animate through CSS `d`. Easing is restricted to CSS-expressible curves.
+channels are deliberately only what CSS can express — `rotate`, `x`, `y`, `skewX`, `skewY`,
+`scaleX`, `scaleY`, `opacity`, `draw` — and keyed compatible
+path geometry can animate through CSS `d`. Easing is restricted to
+CSS-expressible curves.
 
 Measured on the crane: the contact point of the foot, sampled in Node and then
 measured again in a browser playing the compiled file, diverges by at most
@@ -272,9 +313,8 @@ parts were baked. Nothing is silently degraded.
 
 ## Not in scope
 
-No Lottie export, interactivity runtime, simulation-heavy 3D, or bundled physics
-engine. SVG is still the durable primary output; video is an optional edge
-adapter, not a runtime dependency of the scene.
+No interactivity runtime, simulation-heavy 3D, or bundled physics engine. SVG,
+Lottie and video are output adapters, not runtime dependencies of the scene.
 
 ## Status
 

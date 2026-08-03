@@ -47,6 +47,7 @@ export interface IRNode {
   name: string;
   path: string;
   pivot?: [number, number];
+  transform?: Node['transform'];
   contact?: [number, number];
   offstage?: boolean;
   clip?: string;
@@ -110,6 +111,7 @@ function irNode(node: Node, samples: number): IRNode {
   return {
     ...node,
     pivot: node.pivot ? [...node.pivot] : undefined,
+    transform: node.transform ? { ...node.transform } : undefined,
     contact: node.contact ? [...node.contact] : undefined,
     variants: node.variants ? [...node.variants] : undefined,
     tracks: node.tracks.map((track) => irTrack(track, samples)),
@@ -198,6 +200,7 @@ function liveNode(node: IRNode): Node {
   return {
     ...node,
     pivot: node.pivot ? [...node.pivot] : undefined,
+    transform: node.transform ? { ...node.transform } : undefined,
     contact: node.contact ? [...node.contact] : undefined,
     variants: node.variants ? [...node.variants] : undefined,
     tracks: node.tracks.map(liveTrack),

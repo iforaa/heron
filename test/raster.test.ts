@@ -500,6 +500,29 @@ test('trace then match round-trips the reference logo faithfully', async () => {
   for (const w of main) assert.ok(w > 30 && w < 45, `long runs are ~36px wide, measured ${w}`);
 });
 
+test('match keeps native scene coordinates when a large reference is downsampled', async () => {
+  const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { character, match, rect, renderStatic } = await import('../src/index.ts');
+
+  const size = 1600; // Above loadImage's 1400px working cap.
+  const scene = character('large reference', { viewBox: [0, 0, size, size] }, () => {
+    rect({ x: 180, y: 260, w: 1040, h: 760, radius: 90, fill: '#111' });
+  });
+  const reference = rasterise(renderStatic(scene, 0, { width: size }), size, size);
+  const dir = mkdtempSync(join(tmpdir(), 'heron-large-match-'));
+  const file = join(dir, 'reference.png');
+  try {
+    writeFileSync(file, encodePng(reference.rgba, reference.width, reference.height));
+    const report = match(scene, file);
+    assert.ok(report.softIou > 99, `native geometry should still align, got ${report.softIou}%`);
+    assert.ok(Math.abs(report.coverageRatio - 1) < 0.01, `ink ratio drifted to ${report.coverageRatio}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('junction remnants are dropped, real strokes are not', async () => {
   const { junctions } = await import('../src/index.ts');
   // A T: the crossbar, the stem, and — at the meeting point — a stub of
