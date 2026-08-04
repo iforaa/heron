@@ -78,16 +78,31 @@ export const craneGolf: Character = character(
   { viewBox: [0, 0, 1024, 1024], duration: DURATION, ground: 960, once: true },
   () => {
     /**
-     * s0/s1 and the three small crossing remnants from the measured icon.
+     * s0/s1 and two of the three small crossing remnants from the measured icon.
      * The ring begins invisible and writes itself back on only after the golfer
      * has recovered, resolving the character performance into the original mark.
+     *
+     * `draw` compiles to stroke-dashoffset, which reveals strokes and cannot
+     * touch a fill. These two remnants may still live here because they sit at
+     * the arcs' start points — 18.7 and 7.3 units away — which is where the pen
+     * already is at draw 0. See `ringGap` for the one that does not.
      */
     part('ring', () => {
       arc({ cx: 513.1, cy: 427.7, r: 359.2, from: -102.2, to: 83.1, stroke: INK, width: 35.2 });
       arc({ cx: 512.9, cy: 427.9, r: 359, from: -129.9, to: -248.6, stroke: INK, width: 35.2 });
       path({ d: 'M 436 58 c -2 1 -8 2 -14 4 -7 1 -13 3 -14 3 -1 0 -7 2 -13 4 -5 2 -10 4 -10 4 0 1 3 3 9 3 9 2 22 6 28 10 2 1 2 1 9 -6 7 -6 7 -6 5 -8 -2 -2 -2 -2 2 -7 4 -4 4 -4 2 -6 -1 -1 -2 -2 -4 -1 z', fill: INK });
-      path({ d: 'M 384 746 c -1 2 -2 3 -1 3 0 1 0 2 -1 3 -1 1 -1 1 1 3 1 2 2 3 1 4 -1 0 1 3 5 7 l 7 6 8 -9 9 -9 -3 -1 c -7 -3 -17 -6 -19 -7 -1 0 -2 -1 -3 -1 0 -2 -1 -1 -4 1 z', fill: INK });
       path({ d: 'M 289 149 c -4 5 -5 6 -4 7 2 1 2 1 1 3 -2 1 -2 2 2 5 l 4 4 6 -5 c 4 -3 7 -6 7 -7 1 0 -1 -3 -4 -6 -3 -3 -6 -6 -6 -6 0 0 -3 2 -6 5 z', fill: INK });
+    });
+
+    /**
+     * The third remnant sits 16.3 units from the far *end* of the shorter arc,
+     * not at a start. Left inside `ring` it was painted at full the instant the
+     * ring turned visible, while the pen was still three fifths of a sweep away
+     * — a wedge floating unattached beside the standing leg. Its own part lets
+     * an opacity reveal wait for the pen to actually arrive.
+     */
+    part('ringGap', () => {
+      path({ d: 'M 384 746 c -1 2 -2 3 -1 3 0 1 0 2 -1 3 -1 1 -1 1 1 3 1 2 2 3 1 4 -1 0 1 3 5 7 l 7 6 8 -9 9 -9 -3 -1 c -7 -3 -17 -6 -19 -7 -1 0 -2 -1 -3 -1 0 -2 -1 -1 -4 1 z', fill: INK });
     });
 
     // Tee and ball live behind the bird, so the club sweeps in front of them.
@@ -317,12 +332,59 @@ craneGolf.part('ring').animate({
   opacity: within(LOGO_RETURN, keys([[0, 0], [0.15, 1], [1, 1]])),
 });
 
+/** Arc length in user units, the same measure `strokeLength` works in. */
+const arcLength = (r: number, from: number, to: number) =>
+  (r * Math.abs(to - from) * Math.PI) / 180;
+
+/**
+ * Where the pen is when it reaches the far remnant.
+ *
+ * Every stroke under a part shares one dash pattern — the longest one, which
+ * `strokeLength` pads by 2% so a chord sum never leaves a gap at the end — and
+ * each stroke finishes when its own ink runs out. So the shorter arc completes
+ * at its own length as a fraction of that shared pattern, and inverting the
+ * write-on's easeOut turns that draw progress into a moment in the window.
+ * Derived rather than typed in, so retracing the arcs cannot silently move the
+ * pen out from under the remnant again.
+ */
+const RING_ARCS = [arcLength(359.2, -102.2, 83.1), arcLength(359, -129.9, -248.6)];
+const RING_DASH = Math.max(...RING_ARCS) * 1.02;
+const GAP_DRAW = RING_ARCS[1] / RING_DASH;
+
+/** The point in 0..1 where an easing first reaches a given progress. */
+const easedAt = (ease: (p: number) => number, progress: number): number => {
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (ease(mid) < progress) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+};
+
+const GAP_AT = easedAt(easeOut.fn, GAP_DRAW);
+
+/**
+ * Not a hard step: the remnant is about 30 units across, so the pen takes a
+ * comparable slice of the sweep to cross it. Fading over that slice is the pen
+ * laying it down rather than the wedge blinking into being.
+ */
+const GAP_FADE = 0.035;
+
+craneGolf.part('ringGap').animate({
+  opacity: within(LOGO_RETURN, keys([
+    [0, 0], [GAP_AT, 0], [Math.min(GAP_AT + GAP_FADE, 1), 1], [1, 1],
+  ])),
+});
+
 // A literal path morph is not valid here: the performed crane is many traced
 // strokes while the app mark is three compound filled paths with unrelated
 // command topology. A matched dissolve preserves both drawings and, crucially,
 // leaves the exact production vectors in the final frame.
 const dissolveOut = within(PRODUCTION_LOCKUP, keys([[0, 1, easeInOut], [1, 0]]));
 craneGolf.part('ring').animate({ opacity: dissolveOut });
+craneGolf.part('ringGap').animate({ opacity: dissolveOut });
 craneGolf.part('bird').animate({ opacity: dissolveOut });
 craneGolf.part('pad').animate({ opacity: dissolveOut });
 
