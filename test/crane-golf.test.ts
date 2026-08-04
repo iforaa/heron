@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 
-import { frameAt, nodePose } from '../src/timeline.ts';
+import { frameAt, nodePose, type Frame } from '../src/timeline.ts';
 
 /**
  * `crane-golf.ts` reads the shipped app asset at authoring time, so it can only
@@ -14,34 +14,30 @@ const PRODUCTION_LOGO = new URL(
 );
 const available = existsSync(PRODUCTION_LOGO);
 
-/**
- * The ring writes itself on with `draw`, which compiles to stroke-dashoffset
- * and therefore reveals strokes only. The three measured remnants are fills, so
- * a fill left inside the ring part is painted at full the moment the part turns
- * visible — however far away the pen still is. Two of them sit at the arcs'
- * start points and are correct there; the third sits at the far end of the
- * shorter arc and must wait for the pen to arrive.
- */
+// Why the far remnant has its own reveal is explained at the `ringGap` part in
+// examples/crane-golf.ts: `draw` reveals strokes only, and this fill sits at
+// the far end of the shorter arc, so it must wait for the pen to arrive.
 test('crane-golf holds the far ring remnant until the pen reaches it', { skip: !available }, async () => {
   const { craneGolf } = await import('../examples/crane-golf.ts');
 
-  const opacityAt = (path: string, t: number): number => {
+  const opacityIn = (frame: Frame, path: string): number => {
     const node = craneGolf.find(path);
     assert.ok(node, `expected a "${path}" part`);
-    return nodePose(node, frameAt(craneGolf, t).pose.get(node.path!)).opacity;
+    return nodePose(node, frame.pose.get(node.path!)).opacity;
   };
 
   // Nothing of the ring exists during the performance.
-  assert.equal(opacityAt('ringGap', 0.5), 0);
+  assert.equal(opacityIn(frameAt(craneGolf, 0.5), 'ringGap'), 0);
 
   // The write-on has started and the arcs are visible, but the pen is still far
   // from the far remnant, so it must not have appeared yet.
-  assert.equal(opacityAt('ringGap', 0.83), 0);
-  assert.ok(opacityAt('ring', 0.83) > 0.9, 'the arcs should already be writing on');
+  const writing = frameAt(craneGolf, 0.83);
+  assert.equal(opacityIn(writing, 'ringGap'), 0);
+  assert.ok(opacityIn(writing, 'ring') > 0.9, 'the arcs should already be writing on');
 
-  // The pen reaches it at t=0.8588; shortly after, it is fully laid down.
-  assert.ok(opacityAt('ringGap', 0.88) > 0.99, 'the remnant should be down once the pen has passed');
+  // Shortly after the pen reaches it, it is fully laid down.
+  assert.ok(opacityIn(frameAt(craneGolf, 0.88), 'ringGap') > 0.99, 'the remnant should be down once the pen has passed');
 
   // And it dissolves with the rest of the reconstruction at the lockup.
-  assert.ok(opacityAt('ringGap', 1) < 0.01, 'the remnant should dissolve into the production mark');
+  assert.ok(opacityIn(frameAt(craneGolf, 1), 'ringGap') < 0.01, 'the remnant should dissolve into the production mark');
 });

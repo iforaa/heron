@@ -26,8 +26,8 @@ import { readFileSync } from 'node:fs';
 
 import {
   arc, character, circle, keys, layer, line, part, path, ribbon,
-  score, within,
-  easeIn, easeInOut, easeOut, type Character,
+  score, within, shapeLength, strokeLength,
+  cubicBezier, easeIn, easeInOut, easeOut, type Character,
 } from '../src/index.ts';
 
 const INK = '#3ba064';
@@ -332,38 +332,24 @@ craneGolf.part('ring').animate({
   opacity: within(LOGO_RETURN, keys([[0, 0], [0.15, 1], [1, 1]])),
 });
 
-/** Arc length in user units, the same measure `strokeLength` works in. */
-const arcLength = (r: number, from: number, to: number) =>
-  (r * Math.abs(to - from) * Math.PI) / 180;
-
 /**
  * Where the pen is when it reaches the far remnant.
  *
- * Every stroke under a part shares one dash pattern — the longest one, which
- * `strokeLength` pads by 2% so a chord sum never leaves a gap at the end — and
- * each stroke finishes when its own ink runs out. So the shorter arc completes
- * at its own length as a fraction of that shared pattern, and inverting the
- * write-on's easeOut turns that draw progress into a moment in the window.
- * Derived rather than typed in, so retracing the arcs cannot silently move the
- * pen out from under the remnant again.
+ * Every stroke under a part shares one dash pattern (`strokeLength` of the
+ * part) and each stroke finishes when its own ink runs out, so the shorter arc
+ * completes at its own length as a fraction of that pattern. Both lengths are
+ * measured off the built part with the compiler's own functions, so retracing
+ * the arcs cannot silently move the pen out from under the remnant.
  */
-const RING_ARCS = [arcLength(359.2, -102.2, 83.1), arcLength(359, -129.9, -248.6)];
-const RING_DASH = Math.max(...RING_ARCS) * 1.02;
-const GAP_DRAW = RING_ARCS[1] / RING_DASH;
+const ring = craneGolf.find('ring')!;
+const SHORT_ARC = Math.min(...ring.content.flatMap((item) =>
+  'shape' in item && item.shape.attrs.stroke !== undefined
+    ? [shapeLength(item.shape)] : []));
+const GAP_DRAW = SHORT_ARC / strokeLength(ring);
 
-/** The point in 0..1 where an easing first reaches a given progress. */
-const easedAt = (ease: (p: number) => number, progress: number): number => {
-  let lo = 0;
-  let hi = 1;
-  for (let i = 0; i < 40; i++) {
-    const mid = (lo + hi) / 2;
-    if (ease(mid) < progress) lo = mid;
-    else hi = mid;
-  }
-  return (lo + hi) / 2;
-};
-
-const GAP_AT = easedAt(easeOut.fn, GAP_DRAW);
+// The write-on runs on easeOut; a bezier easing's inverse is the same bezier
+// with its control points swapped, turning draw progress back into window time.
+const GAP_AT = cubicBezier(0, 0, 1, 0.58).fn(GAP_DRAW);
 
 /**
  * Not a hard step: the remnant is about 30 units across, so the pen takes a
@@ -374,7 +360,7 @@ const GAP_FADE = 0.035;
 
 craneGolf.part('ringGap').animate({
   opacity: within(LOGO_RETURN, keys([
-    [0, 0], [GAP_AT, 0], [Math.min(GAP_AT + GAP_FADE, 1), 1], [1, 1],
+    [0, 0], [GAP_AT, 0], [GAP_AT + GAP_FADE, 1], [1, 1],
   ])),
 });
 
