@@ -29,7 +29,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.ts",
+    "test": "tsc --noEmit && node --test test/*.test.ts",
     "prepack": "pnpm build",
     "crane": "node src/cli.ts build examples/crane.ts -o out/crane.svg",
     "stairs": "node src/cli.ts build examples/crane-stairs.ts -o out/crane-stairs.svg -w 1400",
