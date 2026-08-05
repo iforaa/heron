@@ -36,10 +36,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Character } from './scene.ts';
 import {
   renderStatic, renderSheet, renderCueSheet, renderShapeSheet, renderMotionSheet,
-  renderVariantSheet, listShapes,
+  renderVariantSheet, renderOverlaySheet, listShapes,
   cueFrames, sheetTimes, sheetWidth, zoomBox, MOTION_CELL, SHEET_CELL,
   type VariantCell,
 } from './render.ts';
+import { diffTakes, divergentTimes } from './diff.ts';
 import { boxOfCorners, localCorners } from './geometry.ts';
 import { VariantSet } from './variants.ts';
 import type { VariantMeta } from './variants.ts';
@@ -333,6 +334,7 @@ const FLAGS: Record<string, string[]> = {
   trace: ['o', 'epsilon', 'threshold', 'minBranch', 'min-branch', 'name', 'fit', 'ribbons', 'refine'],
   halftone: ['o', 'across', 'threshold', 'width', 'square', 'name'],
   match: ['o', 't', 'threshold', 'json'],
+  diff: ['fps', 'n', 'cols', 'o', 'svg', 'json'],
   snapshot: ['t', 'o', 'w', 'svg'],
   shapes: ['o', 'cols', 'svg'],
   sheet: ['n', 'o', 'cols', 'onion', 'cues', 'svg', 't'],
@@ -385,6 +387,7 @@ const USAGE = `heron - author character animation and compile it for SVG, Lottie
   heron halftone <image.png...> [-o plates.ts] [--across 44] [--threshold 0.15]
                  [--width 1000] [--square] [--name PLATES]
   heron match    <scene.ts> <reference.png> [-o overlay.png] [-t 0]
+  heron diff     <a.ts> <b.ts> [--fps 60] [-n 6] [--cols 3] [-o diff.png] [--svg] [--json]
   heron snapshot <scene.ts> [-t 0.4] [-o frame.png] [-w 520] [--svg]
   heron shapes   <scene.ts> [-o shapes.png] [--cols 5] [--svg]
   heron sheet    <scene.ts> [-n 8] [-o sheet.png] [--cols 4] [--onion 3] [--cues] [--svg]
@@ -585,6 +588,38 @@ async function main(): Promise<void> {
       console.log(formatMatch(report, `${ch.name} vs ${basename(reference)}`));
       console.log(`  ${out}  grey both, red reference only, blue scene only`);
     }
+    return;
+  }
+
+  if (cmd === 'diff') {
+    const otherFile = (args._ as string[])[2];
+    if (!otherFile) throw new Error('heron: diff needs two scene files - the old take, then the new');
+    const other = resolveCharacter(await loadScene(otherFile), otherFile);
+    const fps = args.fps ? Math.trunc(num(args.fps, 60)) : 60;
+    const report = diffTakes(ch, other, { fps, series: Boolean(args.json) });
+    const count = args.n ? Math.trunc(num(args.n, 6)) : 6;
+    const instants = divergentTimes(report, Math.min(count, report.frameCount));
+    const cols = args.cols ? Math.trunc(num(args.cols, 3)) : Math.min(3, instants.length);
+    const sheet = renderOverlaySheet(ch, other, instants, { cols });
+    const out = String(args.o ?? (args.svg ? 'diff.svg' : 'diff.png'));
+    if (args.svg) write(out, sheet);
+    else write(out, toPng(sheet, sheetWidth(cols)));
+
+    if (args.json) {
+      console.log(JSON.stringify({ a: file, b: otherFile, sheet: out, ...report }, null, 2));
+      return;
+    }
+    const unit = (channel: string) => (channel === 'rotate' || channel.startsWith('skew') ? '°' : '');
+    console.log(`${ch.name} vs ${other.name}  ${report.frameCount} frames at ${report.fps}fps${report.durationMismatch ? '  (durations differ)' : ''}`);
+    for (const p of report.parts) {
+      const bits = p.deltas.map((d) => `${d.channel} Δ${d.peak.toFixed(1)}${unit(d.channel)} at t=${d.at.toFixed(2)}`);
+      if (p.geometryChanged) bits.push('geometry changed');
+      console.log(`  ${p.path}  ${bits.join('  ')}`);
+    }
+    if (report.unchanged.length) console.log(`  (${report.unchanged.length} part(s) unchanged)`);
+    if (report.added.length) console.log(`  + added: ${report.added.join(', ')}`);
+    if (report.removed.length) console.log(`  - removed: ${report.removed.join(', ')}`);
+    console.log(`  ${out}  ${instants.length} most-diverged instant(s), old grey under new colour`);
     return;
   }
 

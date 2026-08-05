@@ -1,9 +1,17 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { character, circle, keys, part } from '../src/index.ts';
 import { diffTakes, divergentTimes } from '../src/diff.ts';
 import { renderOverlaySheet } from '../src/render.ts';
+
+const CLI = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+const REPO = fileURLToPath(new URL('..', import.meta.url));
 
 const take = (swing: number, extra = false) => {
   const c = character('take', { viewBox: [0, 0, 100, 100], duration: 1 }, () => {
@@ -82,4 +90,47 @@ test('renderOverlaySheet draws the old take grey under the new take', () => {
   // Two cells, each holding both takes: the dot's circle appears four times.
   const circles = svg.match(/<circle /g) ?? [];
   assert.ok(circles.length >= 4, `expected two takes in two cells, saw ${circles.length} circles`);
+});
+
+test('heron diff reports the changed part and writes an overlay sheet', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'heron-diff-'));
+  try {
+    const out = join(dir, 'diff.svg');
+    const run = spawnSync(process.execPath, [
+      CLI, 'diff', 'test/fixtures/diff-a.ts', 'test/fixtures/diff-b.ts',
+      '--fps', '4', '-n', '2', '-o', out, '--svg',
+    ], { cwd: REPO, encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    assert.match(run.stdout, /dot\s+rotate Δ20.0° at t=0.50/);
+    assert.match(run.stdout, /\+ added: tail/);
+    assert.match(readFileSync(out, 'utf8'), /#b9c2c9/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('heron diff --json carries the full report', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'heron-diff-json-'));
+  try {
+    const run = spawnSync(process.execPath, [
+      CLI, 'diff', 'test/fixtures/diff-a.ts', 'test/fixtures/diff-b.ts',
+      '--fps', '4', '-o', join(dir, 'diff.svg'), '--svg', '--json',
+    ], { cwd: REPO, encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    const report = JSON.parse(run.stdout);
+    assert.equal(report.parts[0].path, 'dot');
+    assert.equal(report.parts[0].deltas[0].channel, 'rotate');
+    assert.equal(report.parts[0].deltas[0].series.length, report.frameCount);
+    assert.deepEqual(report.added, ['tail']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('heron diff refuses a single scene file', () => {
+  const run = spawnSync(process.execPath, [
+    CLI, 'diff', 'test/fixtures/diff-a.ts',
+  ], { cwd: REPO, encoding: 'utf8' });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /diff needs two scene files/);
 });
