@@ -9,7 +9,7 @@
  * number that would mean nothing.
  */
 
-import type { Character, Node } from './scene.ts';
+import { CHANNELS, type Character, type Node } from './scene.ts';
 import { evaluate, nodePose } from './timeline.ts';
 import { playbackTimes } from './delivery.ts';
 
@@ -36,19 +36,27 @@ export interface DiffReport {
   added: string[];
   removed: string[];
   durationMismatch: boolean;
+  /** True when the two takes declare different viewBoxes. */
+  viewBoxMismatch: boolean;
   /** Summed absolute delta across every part and channel, per grid index. */
   divergence: number[];
 }
 
-const POSE_CHANNELS = [
-  'rotate', 'x', 'y', 'scaleX', 'scaleY', 'skewX', 'skewY', 'opacity', 'draw',
-] as const;
-
-/** A part's own geometry, stable across identical declarations. */
+/**
+ * A part's own geometry, stable across identical declarations.
+ *
+ * `JSON.stringify` drops function-valued fields, so a morph's easing (or any
+ * other function on the shape) is invisible here: two shapes whose geometry
+ * is identical but whose timing differs compare equal. That is deliberate —
+ * this flag reports geometry, not timing.
+ */
 function ownShapes(node: Node): string {
   return JSON.stringify(node.content.flatMap((item) => ('shape' in item ? [item.shape] : [])));
 }
 
+// Root-level geometry (path '') has no part to key it by, so it is out of
+// scope for this instrument: trace and import always emit shapes as parts,
+// and anything placed directly on the character root is invisible to diff.
 function partsOf(ch: Character): Map<string, Node> {
   const out = new Map<string, Node>();
   for (const node of ch.nodes()) if (node.path) out.set(node.path, node);
@@ -80,7 +88,7 @@ export function diffTakes(
     const bNode = bParts.get(path);
     if (!bNode) continue;
     const deltas: ChannelDelta[] = [];
-    for (const channel of POSE_CHANNELS) {
+    for (const channel of CHANNELS) {
       let peak = 0;
       let at = times[0];
       const series: Array<[number, number]> = [];
@@ -103,11 +111,19 @@ export function diffTakes(
 
   return {
     fps, frameCount: times.length, times, parts, unchanged, added, removed,
-    durationMismatch: a.duration !== b.duration, divergence,
+    durationMismatch: a.duration !== b.duration,
+    viewBoxMismatch: a.viewBox.some((v, i) => v !== b.viewBox[i]),
+    divergence,
   };
 }
 
-/** The grid instants where the takes disagree most, back in time order. */
+/**
+ * The grid instants where the takes disagree most, back in time order.
+ *
+ * When every divergence value is tied (most often 0, e.g. two takes that
+ * differ only by an added or removed part), `sort` leaves the grid in its
+ * original order, so the result falls back to the first `count` instants.
+ */
 export function divergentTimes(report: DiffReport, count: number): number[] {
   return report.times
     .map((t, i) => ({ t, d: report.divergence[i] }))

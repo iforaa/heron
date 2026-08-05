@@ -135,11 +135,13 @@ export function rig(
     for (const root of children.get(undefined) ?? []) emit(root);
   });
 
-  // An entry whose parent chain never reaches the root is unreachable, and the
-  // only way that happens with validated parent names is a cycle.
+  // An entry whose parent chain never reaches the root is unreachable, which
+  // happens with validated parent names either because it sits on a cycle or
+  // because it is a descendant of one — both are reported together, since
+  // this pass cannot tell which parts of `missed` are the cycle itself.
   const missed = entries.map(([n]) => n).filter((n) => !emitted.has(n));
   if (missed.length) {
-    throw new Error(`heron: rig parts ${missed.join(', ')} form a parent cycle and never reach the root`);
+    throw new Error(`heron: rig parts ${missed.join(', ')} never reach the root — a parent cycle, or a child of one`);
   }
   return built;
 }

@@ -610,7 +610,7 @@ async function main(): Promise<void> {
       return;
     }
     const unit = (channel: string) => (channel === 'rotate' || channel.startsWith('skew') ? '°' : '');
-    console.log(`${ch.name} vs ${other.name}  ${report.frameCount} frames at ${report.fps}fps${report.durationMismatch ? '  (durations differ)' : ''}`);
+    console.log(`${ch.name} vs ${other.name}  ${report.frameCount} frames at ${report.fps}fps${report.durationMismatch ? '  (durations differ)' : ''}${report.viewBoxMismatch ? '  (viewBoxes differ)' : ''}`);
     for (const p of report.parts) {
       const bits = p.deltas.map((d) => `${d.channel} Δ${d.peak.toFixed(1)}${unit(d.channel)} at t=${d.at.toFixed(2)}`);
       if (p.geometryChanged) bits.push('geometry changed');

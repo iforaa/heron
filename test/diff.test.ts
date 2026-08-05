@@ -127,6 +127,53 @@ test('heron diff --json carries the full report', () => {
   }
 });
 
+test('durationMismatch flags takes of different length, viewBoxMismatch stays false', () => {
+  const a = character('a', { viewBox: [0, 0, 100, 100], duration: 1 }, () => {
+    part('p', () => { circle({ cx: 5, cy: 5, r: 2, fill: '#000' }); });
+  });
+  const b = character('b', { viewBox: [0, 0, 100, 100], duration: 2 }, () => {
+    part('p', () => { circle({ cx: 5, cy: 5, r: 2, fill: '#000' }); });
+  });
+  const report = diffTakes(a, b, { fps: 4 });
+  assert.equal(report.durationMismatch, true);
+  assert.equal(report.viewBoxMismatch, false);
+});
+
+test('viewBoxMismatch flags takes with different viewBoxes', () => {
+  const a = character('a', { viewBox: [0, 0, 100, 100] }, () => {
+    part('p', () => { circle({ cx: 5, cy: 5, r: 2, fill: '#000' }); });
+  });
+  const b = character('b', { viewBox: [0, 0, 200, 100] }, () => {
+    part('p', () => { circle({ cx: 5, cy: 5, r: 2, fill: '#000' }); });
+  });
+  assert.equal(diffTakes(a, b, { fps: 4 }).viewBoxMismatch, true);
+});
+
+test('a once take extends the grid to hold the last frame at t=1', () => {
+  const once = character('once', { viewBox: [0, 0, 100, 100], duration: 1, once: true }, () => {
+    part('p', () => { circle({ cx: 5, cy: 5, r: 2, fill: '#000' }); });
+  });
+  const report = diffTakes(once, once, { fps: 4 });
+  assert.equal(report.times.at(-1), 1);
+});
+
+test('removed parts are named without being diffed', () => {
+  const report = diffTakes(take(10, true), take(10), { fps: 4 });
+  assert.deepEqual(report.removed, ['tail']);
+  assert.deepEqual(report.added, []);
+});
+
+// When two takes differ only by an added or removed part, no pose channel
+// ever moves, so every grid instant ties at zero divergence. Array.sort is
+// stable, so divergentTimes falls back to the grid's declared order and
+// returns its first `count` instants rather than an arbitrary selection.
+test('divergentTimes falls back to grid order when every instant ties', () => {
+  const report = diffTakes(take(10), take(10, true), { fps: 4 });
+  assert.ok(report.divergence.every((d) => d === 0), 'no pose channel moved');
+  const top = divergentTimes(report, 2);
+  assert.deepEqual(top, report.times.slice(0, 2));
+});
+
 test('heron diff refuses a single scene file', () => {
   const run = spawnSync(process.execPath, [
     CLI, 'diff', 'test/fixtures/diff-a.ts',

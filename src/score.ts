@@ -448,6 +448,10 @@ export function withinAdditive(b: Beat, channel: Channel, o: AdditiveOptions = {
  * hand-sampling it first. The shape is sampled in its own local time — seconds
  * first, exactly as `during()` hands them over — and the neutral-ramp policy is
  * withinAdditive's, written once.
+ *
+ * Unlike `during()`, which emits a shape's exact keyframes when it carries
+ * `.keys`, this always samples: a keyed shape trades its exactness for the
+ * additive attack/release ramps, which only sampling can produce.
  */
 export function duringAdditive(
   b: Beat, shape: Shape, o: AdditiveOptions & { samples?: number } = {},
