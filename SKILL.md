@@ -50,6 +50,20 @@ heron build logo.ts -o logo.svg --fps 30
 - `match` is the warrant that the rest pose still agrees with the reference.
   Grey is shared ink, red is missing scene ink, blue is extra scene ink.
 
+Turn an assignment into a character with `rig()` — no hand-written module:
+
+```ts
+const [thigh, shin] = cutRun(RUNS.s4, 0.3812);   // from heron rig's suggestions
+export const crane = rig('crane', { viewBox: [0, 0, 1024, 1024], duration: 2 }, {
+  body:  { runs: [RUNS.s0, RUNS.s1], fill: INK },
+  thigh: { runs: [thigh], parent: 'body', pivot: JOINTS[2], fill: INK },
+  shin:  { runs: [shin],  parent: 'thigh', pivot: [402, 223], fill: INK },
+});
+```
+
+A child part must state its pivot — the joint it rotates about. Re-tracing
+regenerates RUNS; the assignment survives.
+
 See [geometry metrology](docs/geometry-metrology.md) for interpreting match and
 for choosing strokes, ribbons, paths, and arcs.
 
@@ -129,7 +143,9 @@ scene.part('body').animate({
 `within()`/`.place()` hold the channel’s first and last values outside the
 window. Use `withinAdditive()` or `beats.additive()` for a separate layer that
 ramps from neutral and returns to it; pass `neutral: 1` for scale/opacity and
-leave the default 0 for translation/rotation/skew.
+leave the default 0 for translation/rotation/skew. For a procedural `Shape`
+instead of an authored channel, `duringAdditive()` or `beats.duringAdditive()`
+is the same ramp applied to `during()`'s input.
 
 ## World-space targets
 
@@ -159,6 +175,10 @@ perfectly vertical chain. Apply it after base joint and target motion.
   instants.
 - `motion`: world trajectory, spacing, speed, holds, reversals, and clearance.
 - `lint --json`: structural failures on the same frame clock as delivery.
+- `diff old.ts new.ts`: what one edit changed: per part and channel, the peak
+  delta and when (`dot  rotate Δ20.0° at t=0.50`), plus an overlay sheet of the
+  most-diverged instants, old take grey under the new. `--json` for the full
+  per-frame series. Run it after a tweak instead of re-reading whole sheets.
 - `studio`: the real compiled CSS paused and scrubbed by animation delay.
 - `variants`: fresh scene builds across a parameter grid.
 

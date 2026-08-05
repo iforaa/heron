@@ -95,9 +95,11 @@ style of the existing command tests.
   suite cannot pass on code that does not typecheck.
 - `duringAdditive()` in `src/score.ts`, mirroring `withinAdditive()` exactly
   (same `neutral`/`attack`/`release` semantics and neutral ramps at both
-  edges), resolving its window through `during()`'s beat lookup. Exported next
-  to `withinAdditive`; documented in SKILL.md where `withinAdditive` already
-  appears.
+  edges), taking a `Beat` and a procedural `Shape` exactly as `during()` does,
+  sampling the shape locally and delegating the neutral-ramp policy to
+  `withinAdditive()`; also available as `Windows.duringAdditive(name, shape,
+  o)`. Exported next to `withinAdditive`; documented in SKILL.md where
+  `withinAdditive` already appears.
 
 **Tests.** `duringAdditive` agrees with `withinAdditive` when handed the beat
 it names; unknown beat name errors like `during()` does.
