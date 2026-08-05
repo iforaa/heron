@@ -100,8 +100,8 @@ export {
 export type { Pose, NodePose, Frame, Mat, TrackSnapshot } from './timeline.ts';
 
 export {
-  cssClass, definitionsSvg, renderContext, renderStatic, renderSheet, renderCueSheet, renderShapeSheet,
-  renderMotionSheet, renderVariantSheet, prefixIds,
+  cssClass, definitionsSvg, renderContext, renderStatic, renderSheet, renderOverlaySheet, renderCueSheet,
+  renderShapeSheet, renderMotionSheet, renderVariantSheet, prefixIds,
   listShapes, cueFrames, sheetTimes, sheetWidth, zoomBox, transformAttr,
   TRACK_HUES, MOTION_CELL, SHEET_CELL,
 } from './render.ts';

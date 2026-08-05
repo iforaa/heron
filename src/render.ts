@@ -561,6 +561,44 @@ export function renderSheet(
   return tile(ch, cells, opts.cols ?? Math.min(4, times.length), opts.cellWidth ?? SHEET_CELL, { context });
 }
 
+/**
+ * Two takes of the same scene in one cell: the old one greyed and faded under,
+ * the new one in its own ink on top. This is `heron diff`'s visual half — the
+ * numbers say which part moved, the overlay says whether it moved well.
+ *
+ * The under-take's ids are prefixed so two characters' defs can share one
+ * document, the same trick the variants sheet uses.
+ */
+export function renderOverlaySheet(
+  under: Character,
+  over: Character,
+  times: number[],
+  opts: { cols?: number; cellWidth?: number } = {},
+): string {
+  const underContext = renderContext(under);
+  const overContext = renderContext(over);
+  const grey: Paint = (shape) => {
+    const attrs = { ...shape.attrs };
+    if (attrs.fill !== undefined && attrs.fill !== 'none') attrs.fill = '#b9c2c9';
+    if (attrs.stroke !== undefined && attrs.stroke !== 'none') attrs.stroke = '#b9c2c9';
+    return { ...shape, attrs };
+  };
+  const cells = times.map((t) => ({
+    label: `t=${t.toFixed(2)}`,
+    body: block(
+      prefixIds(nodeSvg(under.root, evaluate(under, t), '      ', grey, underContext, t, { fade: 0.55 }), 'was-'),
+      nodeSvg(over.root, evaluate(over, t), '      ', undefined, overContext, t),
+    ),
+  }));
+  return tile(over, cells, opts.cols ?? Math.min(4, times.length), opts.cellWidth ?? SHEET_CELL, {
+    context: overContext,
+    defs: block(
+      prefixIds(definitionsSvg(under, '  ', underContext), 'was-'),
+      definitionsSvg(over, '  ', overContext),
+    ),
+  });
+}
+
 export interface CueFrame {
   cue: string;
   /** Normalized cycle time. */

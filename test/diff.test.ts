@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { character, circle, keys, part } from '../src/index.ts';
 import { diffTakes, divergentTimes } from '../src/diff.ts';
+import { renderOverlaySheet } from '../src/render.ts';
 
 const take = (swing: number, extra = false) => {
   const c = character('take', { viewBox: [0, 0, 100, 100], duration: 1 }, () => {
@@ -69,4 +70,16 @@ test('divergentTimes ranks instants by total delta and returns them in time orde
   assert.equal(top.length, 2);
   assert.ok(top[0] < top[1], 'chronological order');
   assert.ok(top.includes(0.5), 'the peak instant is in the selection');
+});
+
+test('renderOverlaySheet draws the old take grey under the new take', () => {
+  const svg = renderOverlaySheet(take(10), take(30), [0.25, 0.5]);
+  assert.match(svg, /^<svg /);
+  assert.match(svg, /t=0.50/);
+  // The under-take is recoloured grey; the over-take keeps its own ink.
+  assert.match(svg, /#b9c2c9/);
+  assert.match(svg, /#123/);
+  // Two cells, each holding both takes: the dot's circle appears four times.
+  const circles = svg.match(/<circle /g) ?? [];
+  assert.ok(circles.length >= 4, `expected two takes in two cells, saw ${circles.length} circles`);
 });
