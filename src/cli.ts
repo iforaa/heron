@@ -595,11 +595,11 @@ async function main(): Promise<void> {
     const otherFile = (args._ as string[])[2];
     if (!otherFile) throw new Error('heron: diff needs two scene files - the old take, then the new');
     const other = resolveCharacter(await loadScene(otherFile), otherFile);
-    const fps = args.fps ? Math.trunc(num(args.fps, 60)) : 60;
+    const fps = num(args.fps, 60);
     const report = diffTakes(ch, other, { fps, series: Boolean(args.json) });
-    const count = args.n ? Math.trunc(num(args.n, 6)) : 6;
+    const count = num(args.n, 6);
     const instants = divergentTimes(report, Math.min(count, report.frameCount));
-    const cols = args.cols ? Math.trunc(num(args.cols, 3)) : Math.min(3, instants.length);
+    const cols = num(args.cols, Math.min(3, instants.length));
     const sheet = renderOverlaySheet(ch, other, instants, { cols });
     const out = String(args.o ?? (args.svg ? 'diff.svg' : 'diff.png'));
     if (args.svg) write(out, sheet);
