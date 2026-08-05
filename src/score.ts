@@ -166,6 +166,11 @@ export abstract class Windows {
     return withinAdditive(this.at(name), channel, o);
   }
 
+  /** Places a procedural shape as a self-contained additive layer, neutral outside. */
+  duringAdditive(name: string, shape: Shape, o: AdditiveOptions & { samples?: number } = {}): Channel {
+    return duringAdditive(this.at(name), shape, o);
+  }
+
   /** Gives one field instance its staggered sub-window inside this window. */
   stagger(name: string, i: number, n: number, o: StaggerOptions = {}): Beat {
     return stagger(this.at(name), i, n, o);
@@ -433,6 +438,28 @@ export function withinAdditive(b: Beat, channel: Channel, o: AdditiveOptions = {
     local = keys(tuples);
   }
   return within(b, local);
+}
+
+/**
+ * Places a procedural shape inside a beat as a self-contained additive layer.
+ *
+ * `during()` and `within()` are one pair: shape in, channel in. `withinAdditive`
+ * had no shape-taking twin, so a procedural gesture could not be layered without
+ * hand-sampling it first. The shape is sampled in its own local time — seconds
+ * first, exactly as `during()` hands them over — and the neutral-ramp policy is
+ * withinAdditive's, written once.
+ */
+export function duringAdditive(
+  b: Beat, shape: Shape, o: AdditiveOptions & { samples?: number } = {},
+): Channel {
+  validateBeat(b, 'duringAdditive');
+  const { samples, ...additive } = o;
+  const width = Math.max(1e-6, b.to - b.from);
+  const local = sampled(
+    (u: number) => shape(u * b.seconds, u),
+    samples ?? shape.samples?.(b) ?? density(width),
+  );
+  return withinAdditive(b, local, additive);
 }
 
 function validateBeat(b: Beat, fn: string): void {

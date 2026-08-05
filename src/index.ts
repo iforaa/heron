@@ -49,7 +49,7 @@ export { spring, settleTime, criticalDamping } from './spring.ts';
 export type { SpringOptions } from './spring.ts';
 
 export {
-  score, Score, cueSheet, CueSheet, during, within, withinAdditive, density, stagger, swell, shift, ramp, hold,
+  score, Score, cueSheet, CueSheet, during, within, withinAdditive, duringAdditive, density, stagger, swell, shift, ramp, hold,
 } from './score.ts';
 export type { Beat, CueSpan, Shape, StaggerOptions, AdditiveOptions } from './score.ts';
 

@@ -1,0 +1,42 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { duringAdditive, withinAdditive, score, type Beat } from '../src/index.ts';
+import { channelAt } from '../src/timeline.ts';
+
+const beat: Beat = { name: 'sway', from: 0.2, to: 0.7, seconds: 1 };
+const wave = (seconds: number, u: number) => Math.sin(u * Math.PI) * 10;
+
+test('duringAdditive is neutral outside its beat and follows the shape inside', () => {
+  const ch = duringAdditive(beat, wave, { neutral: 0 });
+  assert.equal(channelAt(ch, 0), 0);
+  assert.equal(channelAt(ch, 1), 0);
+  assert.equal(channelAt(ch, 0.1), 0);
+  // Mid-beat, past the default attack ramp, the shape's own value comes through.
+  const mid = channelAt(ch, 0.45);
+  assert.ok(mid > 8, `expected the sine peak region, got ${mid}`);
+});
+
+test('duringAdditive agrees with withinAdditive over the sampled shape', () => {
+  const ch = duringAdditive(beat, wave, { neutral: 0, attack: 0.1, release: 0.1 });
+  // The same shape, hand-sampled to a local channel, placed by withinAdditive.
+  const local = { kind: 'fn' as const, fn: (u: number) => wave(u * beat.seconds, u), samples: 60 };
+  const reference = withinAdditive(beat, local, { neutral: 0, attack: 0.1, release: 0.1 });
+  for (const t of [0, 0.2, 0.3, 0.45, 0.6, 0.7, 1]) {
+    assert.ok(Math.abs(channelAt(ch, t) - channelAt(reference, t)) < 1e-6, `diverged at t=${t}`);
+  }
+});
+
+test('score windows can place a shape additively by beat name', () => {
+  const beats = score(2, [['enter', 0.5], ['sway', 1], ['exit', 0]]);
+  const ch = beats.duringAdditive('sway', wave, { neutral: 0 });
+  assert.equal(channelAt(ch, 0), 0);
+  assert.equal(channelAt(ch, 1), 0);
+});
+
+test('duringAdditive validates its beat like the rest of the family', () => {
+  assert.throws(
+    () => duringAdditive({ name: 'bad', from: 0.9, to: 0.1, seconds: 1 }, wave),
+    /duringAdditive/,
+  );
+});
