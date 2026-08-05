@@ -152,6 +152,8 @@ export { measuredRun, cutRun, joinRuns } from './runs.ts';
 export type { MeasuredRun } from './runs.ts';
 export { analyzeRig, rig } from './rig.ts';
 export type { RigPart, RigReport, RigRunReport, RigCutSuggestion } from './rig.ts';
+export { diffTakes, divergentTimes } from './diff.ts';
+export type { DiffReport, PartDiff, ChannelDelta } from './diff.ts';
 export { importSvgSource } from './import-svg.ts';
 export type { ImportSvgOptions, ImportSvgResult } from './import-svg.ts';
 export { hasPotrace, outlinePaths } from './outline.ts';
