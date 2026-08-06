@@ -10,9 +10,10 @@
 
 import {
   character, channelAt, circle, ellipse, easeInOut, easeOut, keys, limb,
-  line, part, path as drawPath, reach, rect, sampled, walkCycle,
+  line, part, path as drawPath, reach, rect, sampled,
   type Channel, type Character, type Vec2,
 } from '../src/index.ts';
+import { walkCycle } from './lib/walk.ts';
 import {
   chessrunObjects, type ChessrunObject,
 } from './chessrun-objects.ts';

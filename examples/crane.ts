@@ -5,9 +5,9 @@
 
 import {
   character, part, limb, ellipse, circle, path,
-  walkCycle, bodyBob, sway, pulse, applyGait,
   type Character, type Vec2,
 } from '../src/index.ts';
+import { walkCycle, bodyBob, sway, pulse, applyGait } from './lib/walk.ts';
 
 const PALE = '#eef3f6';
 const TAIL = '#dde5ea';

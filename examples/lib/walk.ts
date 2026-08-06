@@ -15,8 +15,8 @@
  *      hand-tuned, so it survives any change to the other parameters.
  */
 
-import { type Channel, type Character, type Track, keys } from '../scene.ts';
-import { glide, linear, push, swing } from '../easing.ts';
+import { type Channel, type Character, type Track, keys } from '../../src/scene.ts';
+import { glide, linear, push, swing } from '../../src/easing.ts';
 
 export interface WalkOptions {
   /** Fraction of the cycle the foot spends on the ground. Above 0.5 gives the

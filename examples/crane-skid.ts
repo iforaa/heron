@@ -7,9 +7,11 @@
  */
 
 import {
-  character, circle, field, journey, keys, line, part, rect, score, spring,
-  settleTime, walkCycle, easeInOut, easeOut, type Character,
+  character, circle, field, keys, line, part, rect, score, spring,
+  settleTime, easeInOut, easeOut, type Character,
 } from '../src/index.ts';
+import { walkCycle } from './lib/walk.ts';
+import { journey } from './lib/journey.ts';
 import {
   FAR, GROUND, INK, SEGMENTS, craneRig, offsetFarLeg,
 } from './crane-rig.ts';

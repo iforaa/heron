@@ -8,9 +8,10 @@
 
 import {
   character, part, limb, ellipse, circle, rect, path, line,
-  walkCycle, bodyBob, sway, pulse, applyGait, keys, easeInOut,
+  keys, easeInOut,
   type Character, type Vec2,
 } from '../src/index.ts';
+import { walkCycle, bodyBob, sway, pulse, applyGait } from './lib/walk.ts';
 
 const FUR = '#c98d4d';
 const FUR_DARK = '#a97036';

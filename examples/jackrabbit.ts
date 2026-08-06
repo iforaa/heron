@@ -19,9 +19,10 @@
 
 import {
   character, circle, ellipse, keys, layer, limb, line, part, ribbon, strokeText, through,
-  during, hops, jump, score, within,
+  during, score, within,
   easeOut, type Vec2,
 } from '../src/index.ts';
+import { hops, jump } from './lib/jump.ts';
 
 const GREEN = '#37995d';
 const FAR = '#8fc7a8';

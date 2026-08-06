@@ -138,15 +138,6 @@ export type { StudioOptions, Curve, CurveSample } from './studio.ts';
 export { lint, formatFindings } from './lint.ts';
 export type { Finding, LintOptions } from './lint.ts';
 
-export { walkCycle, bodyBob, sway, pulse, applyGait } from './behaviors/walk.ts';
-export type { WalkOptions, WalkTracks, BobOptions } from './behaviors/walk.ts';
-
-export { journey, stairs, flat, strideLength } from './behaviors/journey.ts';
-export type { Journey, JourneyOptions, Move, Terrain } from './behaviors/journey.ts';
-
-export { jump, hops } from './behaviors/jump.ts';
-export type { JumpOptions, HopOptions } from './behaviors/jump.ts';
-
 export { trace } from './trace.ts';
 export { measuredRun, cutRun, joinRuns } from './runs.ts';
 export type { MeasuredRun } from './runs.ts';

@@ -24,9 +24,12 @@
 
 import {
   character, keys, layer, line, part, rect, through,
-  aim, during, hops, journey, jump, noise, score, shift, spring, settleTime,
-  strideLength, swell, walkCycle, easeOut, type Character, type Vec2,
+  aim, during, noise, score, shift, spring, settleTime,
+  swell, easeOut, type Character, type Vec2,
 } from '../src/index.ts';
+import { walkCycle } from './lib/walk.ts';
+import { hops, jump } from './lib/jump.ts';
+import { journey, strideLength } from './lib/journey.ts';
 import { ANKLE, GROUND, SEGMENTS, craneRig, offsetFarLeg } from './crane-rig.ts';
 
 // --- the two birds -----------------------------------------------------------

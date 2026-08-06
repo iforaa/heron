@@ -15,9 +15,9 @@
 
 import {
   character, part, layer, line, ellipse, path, arc, through,
-  walkCycle, bodyBob, sway, applyGait,
   type Character, type Vec2,
 } from '../src/index.ts';
+import { walkCycle, bodyBob, sway, applyGait } from './lib/walk.ts';
 
 const GREEN = '#37995d';
 // The mark is monochrome, but two legs in one colour read as one leg. A lighter

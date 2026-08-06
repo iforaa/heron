@@ -32,9 +32,9 @@
  * can travel independently.
  */
 
-import { type Channel, type Character, sampled } from '../scene.ts';
-import { channelAt, pointAt } from '../timeline.ts';
-import { density } from '../score.ts';
+import { type Channel, type Character, sampled } from '../../src/scene.ts';
+import { channelAt, pointAt } from '../../src/timeline.ts';
+import { density } from '../../src/score.ts';
 import { type WalkTracks, applyGait, pulse } from './walk.ts';
 
 /** The joints a gait drives, hip outward. `applyGait` owns the same order. */

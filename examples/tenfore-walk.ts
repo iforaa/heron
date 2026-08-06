@@ -9,7 +9,8 @@
  * See `crane-stairs.ts` for the same bird on a timeline that goes somewhere.
  */
 
-import { keys, swing, walkCycle, sway, pulse, applyGait, type Character } from '../src/index.ts';
+import { keys, swing, type Character } from '../src/index.ts';
+import { walkCycle, sway, pulse, applyGait } from './lib/walk.ts';
 import { SEGMENTS, craneAlone, offsetFarLeg } from './crane-rig.ts';
 
 // Cropped to the ink, measured over the whole cycle rather than the rest pose —

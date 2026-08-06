@@ -27,9 +27,11 @@
 
 import {
   arc, character, keys, layer, line, part, polygon, path, rect,
-  aim, during, journey, noise, score, shift, spring, settleTime, stairs, strideLength,
-  swell, walkCycle, easeOut, type Character, type Vec2,
+  aim, during, noise, score, shift, spring, settleTime,
+  swell, easeOut, type Character, type Vec2,
 } from '../src/index.ts';
+import { walkCycle } from './lib/walk.ts';
+import { journey, stairs, strideLength } from './lib/journey.ts';
 import { GROUND, INK, SEGMENTS, craneAlone, craneRig, offsetFarLeg } from './crane-rig.ts';
 
 // --- the gait ----------------------------------------------------------------

@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import {
   character, part, limb, ellipse, circle, path, svgShape, keys, sampled,
   compile, evaluate, netPose, pointAt, frameAt, lint, renderStatic, renderShapeSheet, listShapes,
-  cubicBezier, linear, easeInOut, walkCycle, partBox,
+  cubicBezier, linear, easeInOut, partBox,
   arcPath, curvePath, type Vec2,
   localMatrix, transformAttr, type Mat, type NodePose,
 } from '../src/index.ts';
+import { walkCycle } from '../examples/lib/walk.ts';
 
 function matrixFromSvgTransform(text: string): Mat {
   const mul = (a: Mat, b: Mat): Mat => [

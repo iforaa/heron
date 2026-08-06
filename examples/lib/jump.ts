@@ -42,9 +42,9 @@
  * applied *after* whatever poses the legs.
  */
 
-import { type Channel, type Character, type Track, sampled } from '../scene.ts';
-import { type Shape } from '../score.ts';
-import { channelAt, trackAt } from '../timeline.ts';
+import { type Channel, type Character, type Track, sampled } from '../../src/scene.ts';
+import { type Shape } from '../../src/score.ts';
+import { channelAt, trackAt } from '../../src/timeline.ts';
 
 const DEG = 180 / Math.PI;
 

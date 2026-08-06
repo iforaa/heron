@@ -29,9 +29,8 @@
  * its numbers is an idiom this project had before it had a grid to exercise it.
  */
 
-import {
-  applyGait, grid, sway, walkCycle, type Character, type Variant,
-} from '../src/index.ts';
+import { grid, type Character, type Variant } from '../src/index.ts';
+import { applyGait, sway, walkCycle } from './lib/walk.ts';
 import { SEGMENTS, craneAlone, offsetFarLeg } from './crane-rig.ts';
 
 // The same run `crane-stairs.ts` uses. Copied rather than imported: importing a

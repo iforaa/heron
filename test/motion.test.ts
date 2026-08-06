@@ -12,10 +12,13 @@ import assert from 'node:assert/strict';
 import {
   character, part, field, limb, swap, circle, line, arc, keys, sampled, compile, renderStatic, lint, easeOut, easeInOut,
   spring, settleTime, criticalDamping, score, cueSheet, during, within, withinAdditive, swell, shift, hold,
-  noise, aim, jump, journey, walkCycle, channelAt, netPose, evaluate, frameAt,
+  noise, aim, channelAt, netPose, evaluate, frameAt,
   strokeLength, pathLength,
   type Vec2,
 } from '../src/index.ts';
+import { walkCycle } from '../examples/lib/walk.ts';
+import { jump } from '../examples/lib/jump.ts';
+import { journey } from '../examples/lib/journey.ts';
 import { rasterise, coverage, totalCoverage } from '../src/raster.ts';
 
 function pointClose(actual: Vec2, expected: Vec2, epsilon = 1e-8): void {

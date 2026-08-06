@@ -11,8 +11,9 @@
  */
 
 import {
-  applyGait, arc, bodyBob, character, keys, linear, part, walkCycle, type Character,
+  arc, character, keys, linear, part, type Character,
 } from '../src/index.ts';
+import { applyGait, bodyBob, walkCycle } from './lib/walk.ts';
 import {
   BIRD, GROUND, SEGMENTS, craneRig, offsetFarLeg,
 } from './crane-rig.ts';
