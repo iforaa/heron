@@ -6,26 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { character, circle, keys, part } from '../src/index.ts';
+import { character, circle, part } from '../src/index.ts';
 import { diffTakes, divergentTimes } from '../src/diff.ts';
 import { renderOverlaySheet } from '../src/render.ts';
+import { take } from './fixtures/diff-scene.ts';
 
 const CLI = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-
-const take = (swing: number, extra = false) => {
-  const c = character('take', { viewBox: [0, 0, 100, 100], duration: 1 }, () => {
-    part('dot', { pivot: [50, 50] }, () => {
-      circle({ cx: 50, cy: 50, r: 10, fill: '#123' });
-    });
-    part('still', () => {
-      circle({ cx: 20, cy: 20, r: 4, fill: '#456' });
-    });
-    if (extra) part('tail', () => { circle({ cx: 80, cy: 80, r: 3, fill: '#789' }); });
-  });
-  c.part('dot').animate({ rotate: keys([[0, 0], [0.5, swing], [1, 0]]) });
-  return c;
-};
 
 test('diffTakes finds the changed part, channel, magnitude and instant', () => {
   const report = diffTakes(take(10), take(30), { fps: 4 });

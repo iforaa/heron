@@ -221,13 +221,16 @@ function definitionShapes(node: Node, indent: string): string {
  * `fill="none"` and `stroke="none"` are load-bearing — an arc is a stroked path
  * with no fill, and painting that fill turns a thin ring into a solid disc. So
  * `none` is left exactly where it is, and only real colours are replaced.
+ *
+ * Everything beyond the paint survives the spread — a repainted morphing shape
+ * still morphs, because recolouring a ghost must not freeze its geometry.
  */
 function repaint(s: ShapeSpec, colour: string): ShapeSpec {
   const attrs: Record<string, string | number> = { ...s.attrs };
   for (const k of ['fill', 'stroke']) {
     if (attrs[k] !== undefined && attrs[k] !== 'none') attrs[k] = colour;
   }
-  return { tag: s.tag, attrs };
+  return { ...s, attrs };
 }
 
 /**
@@ -561,6 +564,8 @@ export function renderSheet(
   return tile(ch, cells, opts.cols ?? Math.min(4, times.length), opts.cellWidth ?? SHEET_CELL, { context });
 }
 
+const WAS = '#b9c2c9';
+
 /**
  * Two takes of the same scene in one cell: the old one greyed and faded under,
  * the new one in its own ink on top. This is `heron diff`'s visual half — the
@@ -577,16 +582,10 @@ export function renderOverlaySheet(
 ): string {
   const underContext = renderContext(under);
   const overContext = renderContext(over);
-  const grey: Paint = (shape) => {
-    const attrs = { ...shape.attrs };
-    if (attrs.fill !== undefined && attrs.fill !== 'none') attrs.fill = '#b9c2c9';
-    if (attrs.stroke !== undefined && attrs.stroke !== 'none') attrs.stroke = '#b9c2c9';
-    return { ...shape, attrs };
-  };
   const cells = times.map((t) => ({
     label: `t=${t.toFixed(2)}`,
     body: block(
-      prefixIds(nodeSvg(under.root, evaluate(under, t), '      ', grey, underContext, t, { fade: 0.55 }), 'was-'),
+      prefixIds(nodeSvg(under.root, evaluate(under, t), '      ', (s) => repaint(s, WAS), underContext, t, { fade: 0.55 }), 'was-'),
       nodeSvg(over.root, evaluate(over, t), '      ', undefined, overContext, t),
     ),
   }));

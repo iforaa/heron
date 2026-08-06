@@ -101,39 +101,35 @@ export function rig(
     }
   }
 
-  const children = new Map<string | undefined, string[]>();
-  for (const [partName, spec] of entries) {
-    const siblings = children.get(spec.parent) ?? [];
-    siblings.push(partName);
-    children.set(spec.parent, siblings);
-  }
-
+  // Children come from filtering the declaration list rather than a prebuilt
+  // index: a rig has a handful of parts, and the filter keeps declaration
+  // order as paint order without a second data structure to maintain.
   const emitted = new Set<string>();
-  const emit = (partName: string): void => {
-    const spec = assignment[partName];
-    emitted.add(partName);
-    part(partName, { pivot: spec.pivot, contact: spec.contact }, () => {
-      for (const run of spec.runs) {
-        const shared = {
-          ...(run.cap === 'butt' ? { cap: 'butt' as const } : {}),
-          ...(run.closed ? { closed: true } : {}),
-          ...(spec.opacity !== undefined ? { opacity: spec.opacity } : {}),
-        };
-        // The same rule trace applies when it emits source: a width profile that
-        // actually varies is a ribbon, a flat one is the stroke it really is.
-        if (run.widths.every((w) => w === run.widths[0])) {
-          through(run.points, { stroke: spec.stroke ?? spec.fill ?? '#000', width: run.widths[0] * 2, ...shared });
-        } else {
-          ribbon(run.points, run.widths, { fill: spec.fill ?? '#000', ...shared });
+  const emit = (parentName?: string): void => {
+    for (const [partName, spec] of entries) {
+      if (spec.parent !== parentName) continue;
+      emitted.add(partName);
+      part(partName, { pivot: spec.pivot, contact: spec.contact }, () => {
+        for (const run of spec.runs) {
+          const shared = {
+            ...(run.cap === 'butt' ? { cap: 'butt' as const } : {}),
+            ...(run.closed ? { closed: true } : {}),
+            ...(spec.opacity !== undefined ? { opacity: spec.opacity } : {}),
+          };
+          // The same rule trace applies when it emits source: a width profile that
+          // actually varies is a ribbon, a flat one is the stroke it really is.
+          if (run.widths.every((w) => w === run.widths[0])) {
+            through(run.points, { stroke: spec.stroke ?? spec.fill ?? '#000', width: run.widths[0] * 2, ...shared });
+          } else {
+            ribbon(run.points, run.widths, { fill: spec.fill ?? '#000', ...shared });
+          }
         }
-      }
-      for (const child of children.get(partName) ?? []) emit(child);
-    });
+        emit(partName);
+      });
+    }
   };
 
-  const built = character(name, opts, () => {
-    for (const root of children.get(undefined) ?? []) emit(root);
-  });
+  const built = character(name, opts, () => emit(undefined));
 
   // An entry whose parent chain never reaches the root is unreachable, which
   // happens with validated parent names either because it sits on a cycle or

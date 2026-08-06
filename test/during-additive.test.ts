@@ -33,8 +33,7 @@ test('score windows can place a shape additively by beat name', () => {
   const beats = score(2, [['enter', 0.5], ['sway', 1], ['exit', 0]]);
   const ch = beats.duringAdditive('sway', wave, { neutral: 0 });
   assert.equal(channelAt(ch, 0), 0);
-  // within()'s cached after = channel.fn(1) passes through release-ramp division,
-  // which can round 1ulp past 1, leaving ~1e-30 of sin(π)*10.
+  // Same 1ulp release-ramp rounding at t=1 as above.
   assert.ok(Math.abs(channelAt(ch, 1)) < 1e-12, `expected near-zero at t=1, got ${channelAt(ch, 1)}`);
 });
 

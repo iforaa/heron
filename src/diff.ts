@@ -87,21 +87,31 @@ export function diffTakes(
   for (const [path, aNode] of aParts) {
     const bNode = bParts.get(path);
     if (!bNode) continue;
-    const deltas: ChannelDelta[] = [];
-    for (const channel of CHANNELS) {
-      let peak = 0;
-      let at = times[0];
-      const series: Array<[number, number]> = [];
-      times.forEach((t, i) => {
-        const va = nodePose(aNode, aFrames[i].get(path))[channel];
-        const vb = nodePose(bNode, bFrames[i].get(path))[channel];
-        if (o.series) series.push([va, vb]);
+    // The composed pose depends on the node and the instant, not the channel,
+    // so it is built once per instant per side and every channel reads from
+    // it — instants outside, channels inside, accumulators carrying the peaks.
+    const perChannel = CHANNELS.map(() => ({
+      peak: 0, at: times[0],
+      series: o.series ? [] as Array<[number, number]> : undefined,
+    }));
+    times.forEach((t, i) => {
+      const aPose = nodePose(aNode, aFrames[i].get(path));
+      const bPose = nodePose(bNode, bFrames[i].get(path));
+      CHANNELS.forEach((channel, c) => {
+        const va = aPose[channel];
+        const vb = bPose[channel];
+        const acc = perChannel[c];
+        acc.series?.push([va, vb]);
         const d = Math.abs(vb - va);
         divergence[i] += d;
-        if (d > peak) { peak = d; at = t; }
+        if (d > acc.peak) { acc.peak = d; acc.at = t; }
       });
-      if (peak > 1e-9) deltas.push({ channel, peak, at, ...(o.series ? { series } : {}) });
-    }
+    });
+    const deltas: ChannelDelta[] = [];
+    CHANNELS.forEach((channel, c) => {
+      const { peak, at, series } = perChannel[c];
+      if (peak > 1e-9) deltas.push({ channel, peak, at, ...(series ? { series } : {}) });
+    });
     deltas.sort((x, y) => y.peak - x.peak);
     const geometryChanged = ownShapes(aNode) !== ownShapes(bNode);
     if (deltas.length || geometryChanged) parts.push({ path, deltas, geometryChanged });
