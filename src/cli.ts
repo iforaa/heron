@@ -28,6 +28,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync, mkdirSync, mkdtempSync, rmSync, existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
@@ -198,10 +199,20 @@ function generatedImport(out: string): string {
  * destroy a command that had already done all of its real work. Isolating it
  * turns that into an error we can report and recover from.
  */
+/**
+ * The child process resolves modules from its own working directory, which is
+ * wherever the agent happens to run the CLI — usually a scene directory with no
+ * node_modules at all. Resolving here, relative to this file, pins the child to
+ * the same resvg this installation carries.
+ */
+function resvgPath(): string {
+  return createRequire(import.meta.url).resolve('@resvg/resvg-js');
+}
+
 function toPng(svg: string, width: number): Buffer {
   const script = `
     const { readFileSync, writeFileSync } = require('node:fs');
-    const { Resvg } = require('@resvg/resvg-js');
+    const { Resvg } = require(process.argv[4]);
     const svg = readFileSync(process.argv[1], 'utf8');
     const png = new Resvg(svg, {
       fitTo: { mode: 'width', value: Number(process.argv[3]) }, background: 'white',
@@ -213,7 +224,7 @@ function toPng(svg: string, width: number): Buffer {
   const pngFile = join(dir, 'out.png');
   try {
     writeFileSync(svgFile, svg);
-    const run = spawnSync(process.execPath, ['-e', script, svgFile, pngFile, String(width)], {
+    const run = spawnSync(process.execPath, ['-e', script, svgFile, pngFile, String(width), resvgPath()], {
       stdio: ['ignore', 'ignore', 'pipe'],
       maxBuffer: 1 << 24,
     });
@@ -235,7 +246,7 @@ function writePngBatch(items: Array<{ svg: string; file: string; width: number }
   if (!items.length) return;
   const script = `
     const { readFileSync, writeFileSync } = require('node:fs');
-    const { Resvg } = require('@resvg/resvg-js');
+    const { Resvg } = require(process.argv[2]);
     const tasks = JSON.parse(readFileSync(process.argv[1], 'utf8'));
     for (const task of tasks) {
       const svg = readFileSync(task.svg, 'utf8');
@@ -255,7 +266,7 @@ function writePngBatch(items: Array<{ svg: string; file: string; width: number }
     });
     const manifest = join(dir, 'tasks.json');
     writeFileSync(manifest, JSON.stringify(tasks));
-    const run = spawnSync(process.execPath, ['-e', script, manifest], {
+    const run = spawnSync(process.execPath, ['-e', script, manifest, resvgPath()], {
       stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 24,
     });
     if (run.status !== 0 || tasks.some((task) => !existsSync(task.png))) {
@@ -382,6 +393,7 @@ const USAGE = `heron - author character animation and compile it for SVG, Lottie
 
   heron trace    <image.png> [-o scene.ts] [--epsilon 1.2] [--threshold 0.22]
                  [--fit 1.5] [--ribbons all|taper|none] [--refine 12]
+                 [--min-branch 6] [--name logo]
   heron import   <art.svg> [-o scene.ts] [--name logo]
   heron rig      <traced.ts> [-o rig.json] [--json]
   heron halftone <image.png...> [-o plates.ts] [--across 44] [--threshold 0.15]
@@ -404,7 +416,7 @@ const USAGE = `heron - author character animation and compile it for SVG, Lottie
   heron lint     <scene.ts> [--fps 60]
   heron studio   <scene.ts> [-o scene.html] [-w 900]
   heron lottie   <scene.ts> [-o animation.json] [--fps 60] [--strict] [--check]
-                 [-t 0,0.25,0.5,0.75,1] [--min-overlap 97] [--json]
+                 [-t 0,0.25,0.5,0.75,1] [--min-overlap 97] [--check-width 1000] [--json]
   heron build    <scene.ts> [-o out.svg] [-w 360] [--fps 60] [--allow-errors]
   heron video    <scene.ts> [-o out.mp4] [-w 1280] [--fps 30] [--audio soundtrack.wav]
 

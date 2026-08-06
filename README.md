@@ -102,7 +102,7 @@ Parts have names and joints, and nesting is the rig — a shin declared inside a
 thigh moves with it.
 
 ```ts
-import { character, part, limb, ellipse, walkCycle } from '@heron/core';
+import { character, easeInOut, keys, part, limb, ellipse } from '@heron/core';
 
 export const crane = character('crane',
   { viewBox: [18, 8, 180, 186], duration: 1.1, ground: 183 },
@@ -116,9 +116,9 @@ export const crane = character('crane',
     });
   });
 
-const gait = walkCycle({ stance: 0.62, reach: 18 });
-crane.part('legNear.thigh').animate(gait.thigh);
-crane.part('legFar.thigh').animate({ ...gait.thigh, phase: 0.5 });
+const thigh = keys([[0, 18, easeInOut], [0.5, -14, easeInOut], [1, 18]]);
+crane.part('legNear.thigh').animate({ rotate: thigh });
+crane.part('legFar.thigh').animate({ rotate: thigh, phase: 0.5 });
 ```
 
 A pivot is the joint's coordinate in the rest pose, written in the same space as
@@ -159,9 +159,9 @@ solved joint motion over animation already on the character:
 
 ```ts
 reach(figure, {
-  upper: 'arm.upper',
-  lower: 'arm.lower',
-  target: { part: 'target' }, // or (t) => [x, y]
+  chain: ['arm.upper', 'arm.upper.lower'],
+  lengths: [72, 66],
+  target: (_t, frame) => frame.point(figure.find('target')!),
   bend: 1,
 });
 ```

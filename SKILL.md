@@ -9,6 +9,15 @@ Heron’s product is the feedback loop. Do not infer that a scene works because 
 compiled. Typecheck it, inspect delivered frames, read the motion measurements,
 and lint on the delivery frame rate.
 
+## Setup
+
+There is no installed `heron` binary yet: run every command in this manual as
+`node src/cli.ts <command> ...` from the repository root (`heron <command>` is
+written below for brevity; do not run `dist/`, which may be stale). Scene files
+import the library by relative path — `import { ... } from '../src/index.ts'` —
+until `@heron/core` is installed as a package. `heron check` typechecks the
+scene, so a `tsconfig.json` must be findable upward from the scene file.
+
 ## Fast path
 
 ```bash
@@ -45,6 +54,10 @@ heron build logo.ts -o logo.svg --fps 30
   group those into anatomy without retyping coordinates.
 - `cutRun(run, at)` splits at normalized arc length and interpolates the matching
   measured width. `joinRuns(a, b)` orients endpoints and moves widths with points.
+  `measuredRun(points, halfWidths, { cap, closed })` constructs a run by hand when
+  geometry comes from somewhere other than trace.
+- `halftone` turns a tonal raster into dot plates when the reference is not line
+  art: `heron halftone photo.png -o plates.ts --across 44`.
 - `rig` relates named runs to traced skeleton joints and prints candidate
   `cutRun(RUNS.name, at)` calls. It proposes cuts; it does not invent anatomy.
 - `match` is the warrant that the rest pose still agrees with the reference.
@@ -62,7 +75,9 @@ export const crane = rig('crane', { viewBox: [0, 0, 1024, 1024], duration: 2 }, 
 ```
 
 A child part must state its pivot — the joint it rotates about. Re-tracing
-regenerates RUNS; the assignment survives.
+regenerates RUNS; the assignment survives. A rig part also takes `stroke`
+(constant-width runs render as strokes), `opacity`, and `contact` — the
+ground-contact point the foot lints read.
 
 See [geometry metrology](docs/geometry-metrology.md) for interpreting match and
 for choosing strokes, ribbons, paths, and arcs.
@@ -96,6 +111,8 @@ keyframes or pollute compile reports.
 
 Part names may contain letters, digits, underscores, and hyphens. Dots are
 reserved for rig paths. Duplicate siblings and ambiguous lookups are errors.
+`part(name, { offstage: true }, ...)` declares a subtree that is meant to sit
+outside the frame, exempting it from the `out-of-view` lint.
 
 ## Motion
 
@@ -118,6 +135,12 @@ bird.part('body.leg').animate({
   rotate: sampled((t) => Math.sin(t * Math.PI * 2) * 18, 96),
 });
 ```
+
+Prefer the shipped motion primitives over hand-rolled math: `spring({ swing,
+damping, mass, stiffness, from, to, velocity })` is anticipation, overshoot and
+settle as one physical model (`settleTime()` reports how long it needs);
+`noise(amount)` is loop-safe idle life; `aim(scene, 'head', { marker, target })`
+returns the rotation that points a part's marker at a world target.
 
 Tracks on one part are layers, outermost first. Transform channels sharing one
 layer must share timing to compile exactly; otherwise only that group is baked.
@@ -180,7 +203,8 @@ perfectly vertical chain. Apply it after base joint and target motion.
   most-diverged instants, old take grey under the new. `--json` for the full
   per-frame series. Run it after a tweak instead of re-reading whole sheets.
 - `studio`: the real compiled CSS paused and scrubbed by animation delay.
-- `variants`: fresh scene builds across a parameter grid.
+- `variants`: fresh scene builds across a parameter grid. The scene module
+  exports the grid: `export const takes = grid((p) => build(p), { ride: [8, 14, 20] })`.
 
 For loops, first and last visual poses must close. Full rotations such as
 0→−360 are a closed orientation. Films declared `once: true` may end elsewhere.
@@ -205,7 +229,10 @@ requirements.
 
 Run `heron check scene.ts --fps <delivery fps> --json`. If a raster reference
 exists, add `--reference reference.png`. Preserve its report with the review
-artifacts. Every CLI command accepts `--json`; errors use `{ ok: false, error }`
-instead of falling back to unstructured prose. `serializeScene()` provides versioned JSON-safe IR when another
-process needs scene structure; procedural functions cross that boundary as
-sampled data.
+artifacts. Every CLI command accepts `--json`. Key failure handling on `ok`,
+not on one shape: uncaught errors print `{ ok: false, error }` on **stderr**,
+while gate commands report their own structured failures (`check` emits
+`{ ok: false, typecheck: [...] }`; `build` and `lottie --strict` name what
+blocked the artifact). `serializeScene()` provides versioned JSON-safe IR when
+another process needs scene structure; procedural functions cross that boundary
+as sampled data.
