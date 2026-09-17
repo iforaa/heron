@@ -14,6 +14,7 @@ import {
   type PartTrack, type TrackReport, CONTACT_BAND, plantedRun, trackParts, trackable,
 } from './track.ts';
 import { playbackTimes } from './delivery.ts';
+import { median, wrapDegrees } from './num.ts';
 
 export interface Finding {
   rule: string;
@@ -77,7 +78,7 @@ export function lint(ch: Character, o: LintOptions = {}): Finding[] {
     ...swapChecks(ch, frames),
     ...groundChecks(ch, frames),
     ...viewBoxCheck(ch, frames),
-    ...kinematics(ch, times),
+    ...kinematics(ch, frames),
   ];
 }
 
@@ -179,7 +180,7 @@ function loopSeam(ch: Character): Finding[] {
       // open seam blocked the loader's deliberately continuous spinner even
       // though its first and last rendered poses are identical.
       const delta = name === 'rotate'
-        ? ((b[name] - a[name] + 180) % 360 + 360) % 360 - 180
+        ? wrapDegrees(b[name] - a[name])
         : b[name] - a[name];
       if (Math.abs(delta) <= EPSILON[name]) continue;
       out.push({
@@ -248,13 +249,12 @@ function groundChecks(ch: Character, frames: Frame[]): Finding[] {
     // ground, so judging them as contact would flag every correct walk.
     if (best.length >= 6) {
       const steps = best.slice(2, -1).map((k) => dx[k]);
-      const sorted = [...steps].sort((a, b) => a - b);
-      const median = sorted[Math.floor(sorted.length / 2)];
-      if (Math.abs(median) > 1e-6) {
+      const mid = median(steps);
+      if (Math.abs(mid) > 1e-6) {
         let worst = 0;
         let worstAt = 0;
         for (let i = 0; i < steps.length; i++) {
-          const dev = Math.abs(steps[i] - median) / Math.abs(median);
+          const dev = Math.abs(steps[i] - mid) / Math.abs(mid);
           if (dev > worst) { worst = dev; worstAt = best[i + 2]; }
         }
         if (worst > SLIP_THRESHOLD) {
@@ -265,7 +265,7 @@ function groundChecks(ch: Character, frames: Frame[]): Finding[] {
             message: 'planted contact point changes speed, which reads as the foot skating',
             detail:
               `speed deviates ${(worst * 100).toFixed(0)}% from the median at t=${frames[worstAt].t.toFixed(2)} ` +
-              `(limit ${(SLIP_THRESHOLD * 100).toFixed(0)}%); ground speed is ${median.toFixed(2)} units/sample ` +
+              `(limit ${(SLIP_THRESHOLD * 100).toFixed(0)}%); ground speed is ${mid.toFixed(2)} units/sample ` +
               `over ${best.length} planted samples`,
           });
         }
@@ -309,7 +309,8 @@ function viewBoxCheck(ch: Character, frames: Frame[]): Finding[] {
  * They read the same measurement pass the motion sheet and the variants overlay
  * read, so a diagnostic and the picture that would show it cannot disagree.
  */
-function kinematics(ch: Character, times: number[]): Finding[] {
+function kinematics(ch: Character, frames: Frame[]): Finding[] {
+  const times = frames.map((frame) => frame.t);
   // A film shorter than one delivery interval has one visible sample and no
   // measurable velocity. Structural checks still inspect that delivered frame.
   if (times.length < 2) return [];
@@ -322,7 +323,10 @@ function kinematics(ch: Character, times: number[]): Finding[] {
 
   const [, , vw, vh] = ch.viewBox;
   const floor = Math.hypot(vw, vh) * MOVES_AT_ALL;
-  const report = trackParts(ch, { parts, times, corners });
+  const byTime = new Map(frames.map((frame) => [frame.t, frame]));
+  const report = trackParts(ch, {
+    parts, times, corners, frameAt: (t) => byTime.get(t) ?? frameAt(ch, t),
+  });
 
   const out: Finding[] = [];
   for (const p of report.parts) {

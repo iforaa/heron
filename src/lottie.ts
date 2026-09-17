@@ -8,11 +8,13 @@
 
 import {
   type Channel, type Character, type Node, type ShapeSpec, type Track, type Vec2,
-  NEUTRAL,
+  NEUTRAL, holdEnds,
 } from './scene.ts';
 import { trackAt } from './timeline.ts';
 import type { CueSheet, Score } from './score.ts';
 import { endpointFrameClock } from './delivery.ts';
+import { round as roundTo } from './num.ts';
+import { EPSILON } from './compile.ts';
 
 type Json = Record<string, unknown>;
 
@@ -50,11 +52,9 @@ const PARAMS: Record<string, number> = {
   M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0,
 };
 
-function round(n: number, places = 4): number {
-  const p = 10 ** places;
-  const out = Math.round(n * p) / p;
-  return Object.is(out, -0) ? 0 : out;
-}
+/** Lottie carries one more decimal than CSS: its frames are integers, so time
+ *  precision has to come from the values. */
+const round = (n: number, places = 4): number => roundTo(n, places);
 
 function near(a: Vec2, b: Vec2): boolean {
   return Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
@@ -238,7 +238,6 @@ export function lottieContours(d: string): Contour[] {
     }
     index += count;
     const relative = command === command.toLowerCase();
-    const before = current;
 
     switch (upper) {
       case 'M': {
@@ -306,7 +305,6 @@ export function lottieContours(d: string): Contour[] {
     if (upper !== 'Q' && upper !== 'T') quadControl = undefined;
     // Relative multi-argument commands are relative to the endpoint reached by
     // the previous argument group, which `current` now names.
-    void before;
   }
   finish();
   if (!contours.length) throw new Error('heron lottie: an SVG path produced no contours');
@@ -437,14 +435,9 @@ function keyProperty(
   map: (value: number) => number,
   report: LottieReport,
 ): Json {
-  // Heron holds the nearest authored value outside the keyed interval. Lottie
-  // otherwise supplies its own underlying value before/after those keys, so
-  // state the held endpoints in the artifact just as the CSS compiler does.
-  const complete = [
-    ...(keys[0].t > 0 ? [{ ...keys[0], t: 0 }] : []),
-    ...keys,
-    ...(keys[keys.length - 1].t < 1 ? [{ ...keys[keys.length - 1], t: 1 }] : []),
-  ];
+  // Lottie supplies its own underlying value before and after the keys, so
+  // the held endpoints are stated in the artifact just as the CSS compiler does.
+  const complete = holdEnds(keys);
   if (complete.every((key) => key.v === complete[0].v)) return { a: 0, k: map(complete[0].v) };
   report.animatedProperties++;
   return {
@@ -464,28 +457,72 @@ function keyProperty(
   };
 }
 
-function sampledProperty(
-  value: (t: number) => number,
-  frames: number,
-  map: (n: number) => number,
-  report: LottieReport,
-): Json {
-  const clock = endpointFrameClock(frames);
-  const values = clock.map((frame) => map(value(frame / frames)));
-  if (values.every((v) => v === values[0])) return { a: 0, k: values[0] };
+/**
+ * The frames a linear replay of the kept frames cannot reproduce within
+ * tolerance — Douglas-Peucker over the sampled values, as the CSS compiler
+ * fits its baked channels.
+ *
+ * A sampled property used to carry every playback frame as a keyframe, each
+ * with two tangent objects; on a two-character film those tangents alone were
+ * two thirds of the JSON. Lottie interpolates linearly between the kept frames
+ * exactly as it did between adjacent ones, so nothing a player draws moves by
+ * more than the budget, and `lottie --check` replays the result to prove it.
+ */
+function thin(clock: number[], values: number[][], tolerance: number[]): number[] {
+  const keep = new Set<number>([0, values.length - 1]);
+  const split = (lo: number, hi: number): void => {
+    if (hi - lo < 2) return;
+    let idx = -1;
+    let err = 0;
+    for (let i = lo + 1; i < hi; i++) {
+      const p = (clock[i] - clock[lo]) / (clock[hi] - clock[lo] || 1);
+      for (let c = 0; c < tolerance.length; c++) {
+        const approx = values[lo][c] + (values[hi][c] - values[lo][c]) * p;
+        const e = Math.abs(values[i][c] - approx) / tolerance[c];
+        if (e > err) { err = e; idx = i; }
+      }
+    }
+    if (idx < 0 || err <= SAMPLED_BUDGET) return;
+    keep.add(idx);
+    split(lo, idx);
+    split(idx, hi);
+  };
+  split(0, values.length - 1);
+  return [...keep].sort((a, b) => a - b);
+}
+
+/** Share of the tolerance a thinned sampled property may spend at frame instants. */
+const SAMPLED_BUDGET = 0.8;
+
+/** Keyframes at the kept frames of a sampled vector, linear between them. */
+function sampledKeys(clock: number[], values: number[][], tolerance: number[], report: LottieReport): Json {
   report.animatedProperties++;
   report.sampledProperties++;
+  const kept = thin(clock, values, tolerance);
   return {
     a: 1,
-    k: values.map((v, f) => {
-      const out: Json = { t: round(clock[f]), s: [round(v)] };
-      if (f < values.length - 1) {
+    k: kept.map((f, index) => {
+      const out: Json = { t: round(clock[f]), s: values[f] };
+      if (index < kept.length - 1) {
         out.i = { x: [1], y: [1] };
         out.o = { x: [0], y: [0] };
       }
       return out;
     }),
   };
+}
+
+function sampledProperty(
+  value: (t: number) => number,
+  frames: number,
+  map: (n: number) => number,
+  tolerance: number,
+  report: LottieReport,
+): Json {
+  const clock = endpointFrameClock(frames);
+  const values = clock.map((frame) => [round(map(value(frame / frames)))]);
+  if (values.every((v) => v[0] === values[0][0])) return { a: 0, k: values[0][0] };
+  return sampledKeys(clock, values, [tolerance], report);
 }
 
 function scalarProperty(
@@ -502,7 +539,7 @@ function scalarProperty(
   if (channel.kind === 'keys' && track.phase === undefined && !channel.keys.some((k) => k.ease.key.startsWith('s:') && k.ease.key !== 's:1,end')) {
     return keyProperty(channel.keys, frames, map, report);
   }
-  return sampledProperty((t) => trackAt(track, t)[name], frames, map, report);
+  return sampledProperty((t) => trackAt(track, t)[name], frames, map, EPSILON[name] * Math.abs(factor), report);
 }
 
 /**
@@ -542,6 +579,7 @@ function cumulativeOpacityProperty(
     (t) => constant * varying.reduce((opacity, track) => opacity * trackAt(track, t).opacity, 1),
     frames,
     (opacity) => round(opacity * 100),
+    EPSILON.opacity * 100,
     report,
   );
 }
@@ -568,12 +606,7 @@ function scaleProperty(track: Track, frames: number, report: LottieReport): Json
         ],
         ease: key.ease,
       }));
-      const vector = [
-        ...(authored[0].t > 0 ? [{ ...authored[0], t: 0 }] : []),
-        ...authored,
-        ...(authored[authored.length - 1].t < 1
-          ? [{ ...authored[authored.length - 1], t: 1 }] : []),
-      ];
+      const vector = holdEnds(authored);
       if (vector.every((key) => String(key.v) === String(vector[0].v))) return { a: 0, k: vector[0].v };
       report.animatedProperties++;
       return {
@@ -600,19 +633,7 @@ function scaleProperty(track: Track, frames: number, report: LottieReport): Json
     return [round(pose.scaleX * 100), round(pose.scaleY * 100), 100];
   });
   if (values.every((v) => String(v) === String(values[0]))) return { a: 0, k: values[0] };
-  report.animatedProperties++;
-  report.sampledProperties++;
-  return {
-    a: 1,
-    k: values.map((value, frame) => {
-      const out: Json = { t: round(clock[frame]), s: value };
-      if (frame < values.length - 1) {
-        out.i = { x: [1], y: [1] };
-        out.o = { x: [0], y: [0] };
-      }
-      return out;
-    }),
-  };
+  return sampledKeys(clock, values, [EPSILON.scaleX * 100, EPSILON.scaleY * 100, Infinity], report);
 }
 
 function layerTransform(
@@ -685,7 +706,7 @@ function shapeItems(
     if (draw) {
       const property = draw.channel.kind === 'keys' && draw.track.phase === undefined
         ? keyProperty(draw.channel.keys, frames, (v) => round(v * 100), report)
-        : sampledProperty((t) => trackAt(draw.track, t).draw, frames, (v) => round(v * 100), report);
+        : sampledProperty((t) => trackAt(draw.track, t).draw, frames, (v) => round(v * 100), EPSILON.draw * 100, report);
       items.push({
         ty: 'tm', nm: 'Heron draw',
         s: { a: 0, k: 0 }, e: property, o: { a: 0, k: 0 }, m: 1,

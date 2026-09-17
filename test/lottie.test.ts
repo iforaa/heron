@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  arcPath, character, checkLottie, circle, compileLottie, cubicBezier, easeIn, easeOut, keys, layer, line,
+  arcPath, character, checkLottie, circle, hasCanvasKit, compileLottie, cubicBezier, easeIn, easeOut, keys, layer, line,
   linearGradient, lottieContours, part, path, pathMorph, sampled, score, trackAt, type Track,
-  svgShape,
+  svgShape, EPSILON,
 } from '../src/index.ts';
 
-test('Skottie raster playback agrees with the SVG evaluator', async () => {
+test('Skottie raster playback agrees with the SVG evaluator', { skip: !hasCanvasKit() && 'canvaskit-wasm not installed' }, async () => {
   const scene = character('player-parity', {
     viewBox: [0, 0, 120, 80], duration: 1, once: true,
   }, () => {
@@ -116,6 +116,7 @@ test('Lottie keys hold authored endpoints and sampled channels use native frame 
   scene.part('mark').animate({
     rotate: keys([[0.25, 10], [0.75, 30]]),
     x: sampled((t) => t * 11, 20),
+    y: sampled((t) => Math.sin(t * Math.PI) * 0.2, 20),
   });
 
   const { animation } = compileLottie(scene, { fps: 4 });
@@ -123,8 +124,23 @@ test('Lottie keys hold authored endpoints and sampled channels use native frame 
     .find((entry) => entry.nm === 'mark');
   assert.deepEqual(layer.ks.r.k.map((key: { t: number }) => key.t), [0, 1.1, 3.3, 4.4]);
   assert.deepEqual(layer.ks.r.k.map((key: { s: number[] }) => key.s[0]), [10, 10, 30, 30]);
-  assert.deepEqual(layer.ks.p.x.k.map((key: { t: number }) => key.t), [0, 1, 2, 3, 4, 4.4]);
-  assert.deepEqual(layer.ks.p.x.k.map((key: { s: number[] }) => key.s[0]), [0, 2.5, 5, 7.5, 10, 11]);
+  // A sampled channel is keyed on the native frame clock — whole frames plus
+  // the fractional last one — but only at the frames a linear replay needs: a
+  // straight line is its two ends, and a curve keeps interior frames.
+  assert.deepEqual(layer.ks.p.x.k.map((key: { t: number }) => key.t), [0, 4.4]);
+  assert.deepEqual(layer.ks.p.x.k.map((key: { s: number[] }) => key.s[0]), [0, 11]);
+  const clock = [0, 1, 2, 3, 4, 4.4];
+  const kept = layer.ks.p.y.k as Array<{ t: number; s: number[] }>;
+  assert.ok(kept.length > 2 && kept.length < clock.length, `kept ${kept.length} of ${clock.length}`);
+  assert.ok(kept.every((key) => clock.includes(key.t)));
+  for (const frame of clock) {
+    const i = kept.findIndex((key) => key.t >= frame);
+    const a = kept[Math.max(0, i - 1)];
+    const b = kept[i];
+    const p = b.t === a.t ? 0 : (frame - a.t) / (b.t - a.t);
+    const replayed = a.s[0] + (b.s[0] - a.s[0]) * p;
+    assert.ok(Math.abs(replayed - Math.sin((frame / 4.4) * Math.PI) * 0.2) <= EPSILON.y + 1e-9, `frame ${frame}`);
+  }
 });
 
 test('Lottie shape opacity composites fill and stroke once and warns on fill-only draw', () => {

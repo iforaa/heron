@@ -111,7 +111,7 @@ function playAt(frames: Keyframe[], t: number, channel: string): number | undefi
 }
 
 function checkScene(ch: Character, label: string, least = 500): void {
-  const { svg } = compile(ch);
+  const { svg, keyframes: shared } = compile(ch);
   const blocks = parseKeyframes(svg);
   let checked = 0;
 
@@ -131,7 +131,11 @@ function checkScene(ch: Character, label: string, least = 500): void {
           // Which block a channel lands in is the compiler's rule, so it is asked
           // rather than restated: a fourth property group must not quietly make
           // this harness check fewer channels.
-          const frames = blocks.get(keyframeName(node.path, layer, channel as ChannelName));
+          // A part whose keys match another's plays that part's block; the
+          // compiler says which, so the harness follows the same indirection
+          // the browser does.
+          const own = keyframeName(node.path, layer, channel as ChannelName);
+          const frames = blocks.get(shared.get(own) ?? own);
           const raw = frames && playAt(frames, local, channel === 'draw' ? 'dashoffset' : channel);
           const got = channel === 'draw' && raw !== undefined ? 1 - raw / dashLen : raw;
           if (got === undefined) continue;

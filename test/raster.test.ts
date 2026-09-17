@@ -578,7 +578,7 @@ test('outline tracing lands in top-left coordinates, not flipped', async () => {
   // every filled shape lands mirrored vertically — which still renders, still
   // looks like artwork, and is entirely wrong.
   const { hasPotrace, outlinePaths } = await import('../src/index.ts');
-  const { pathPoints } = await import('../src/render.ts');
+  const { pathPoints } = await import('../src/geometry.ts');
   if (!hasPotrace()) return; // optional dependency
 
   const m = blank(200, 200);

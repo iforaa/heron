@@ -21,9 +21,9 @@
  * does not exist in the source. A skeleton already branches at joints.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
-import { Resvg } from '@resvg/resvg-js';
+import { Resvg, type ResvgRenderOptions } from '@resvg/resvg-js';
 
 import type { Vec2 } from './scene.ts';
 
@@ -39,6 +39,50 @@ export interface Bitmap {
 const MIME: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
 };
+
+/**
+ * The fonts resvg is allowed to know about, which is deliberately one file.
+ *
+ * Left to itself resvg indexes every font on the machine each time it is
+ * constructed — a quarter of a second of mmapping on macOS, per image, before a
+ * single pixel is drawn. Twenty-eight frame sheets spent thirty seconds on it
+ * and three on rendering. Only sheet labels ever ask for a font, so one
+ * monospace file found once is all they need; a machine with none of these
+ * falls back to the full scan rather than to missing labels.
+ *
+ * `HERON_FONT` names a font file to use instead.
+ */
+const FONT_CANDIDATES: Array<[file: string, family: string]> = [
+  ['/System/Library/Fonts/Menlo.ttc', 'Menlo'],
+  ['/System/Library/Fonts/Monaco.ttf', 'Monaco'],
+  ['/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf', 'DejaVu Sans Mono'],
+  ['/usr/share/fonts/dejavu/DejaVuSansMono.ttf', 'DejaVu Sans Mono'],
+  ['/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf', 'Liberation Mono'],
+  ['/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf', 'Noto Sans Mono'],
+  ['/usr/share/fonts/TTF/DejaVuSansMono.ttf', 'DejaVu Sans Mono'],
+  ['C:\\Windows\\Fonts\\consola.ttf', 'Consolas'],
+  ['C:\\Windows\\Fonts\\cour.ttf', 'Courier New'],
+];
+
+let fontOptions: ResvgRenderOptions['font'] | undefined;
+
+/** resvg's font options: one known monospace file, or the system scan if none is found. */
+export function resvgFont(): NonNullable<ResvgRenderOptions['font']> {
+  if (fontOptions) return fontOptions;
+  const override = process.env.HERON_FONT;
+  const found = override
+    ? [override, override.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '')] as [string, string]
+    : FONT_CANDIDATES.find(([file]) => existsSync(file));
+  fontOptions = found
+    ? { loadSystemFonts: false, fontFiles: [found[0]], defaultFontFamily: found[1], monospaceFamily: found[1] }
+    : { loadSystemFonts: true };
+  return fontOptions;
+}
+
+/** Options for one resvg render, with the font policy applied. */
+export function resvgOptions(o: Omit<ResvgRenderOptions, 'font'> = {}): ResvgRenderOptions {
+  return { ...o, font: resvgFont() };
+}
 
 /**
  * Decodes a raster by handing it to resvg wrapped in an SVG.
@@ -57,21 +101,22 @@ export function loadImage(file: string, maxSize = 1400): Bitmap {
     `<svg xmlns="http://www.w3.org/2000/svg"${w ? ` width="${w}" height="${w}"` : ''}>` +
     `<image href="data:${mime};base64,${data}"/></svg>`;
 
-  const probe = new Resvg(wrap()).render();
+  const probe = new Resvg(wrap(), resvgOptions({ background: 'white' })).render();
   const native = Math.max(probe.width, probe.height);
   const scale = native > maxSize ? maxSize / native : 1;
 
-  const img = new Resvg(wrap(), {
-    fitTo: scale === 1 ? { mode: 'original' } : { mode: 'width', value: Math.round(native * scale) },
+  // The probe already is the image when no downscale is needed.
+  const img = scale === 1 ? probe : new Resvg(wrap(), resvgOptions({
+    fitTo: { mode: 'width', value: Math.round(native * scale) },
     background: 'white',
-  }).render();
+  })).render();
 
   return { width: img.width, height: img.height, rgba: new Uint8Array(img.pixels), scale };
 }
 
 /** Renders an SVG string to RGBA at a given width, for comparison against a reference. */
-export function rasterise(svg: string, width: number, height: number): Bitmap {
-  const img = new Resvg(svg, { fitTo: { mode: 'width', value: width }, background: 'white' }).render();
+export function rasterise(svg: string, width: number): Bitmap {
+  const img = new Resvg(svg, resvgOptions({ fitTo: { mode: 'width', value: width }, background: 'white' })).render();
   return { width: img.width, height: img.height, rgba: new Uint8Array(img.pixels), scale: 1 };
 }
 
@@ -178,16 +223,8 @@ export function totalCoverage(c: Coverage): number {
 }
 
 /** The value at `p` of the way through, 0 to 1, of an already-sorted-or-not list. */
-export function percentile(xs: number[], p: number): number {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.max(0, Math.min(s.length - 1, Math.floor(s.length * p)))];
-}
-
-/** The middle value. Robust where a mean is not, which is why it is used for widths. */
-export function median(xs: number[]): number {
-  return percentile(xs, 0.5);
-}
+import { median, percentile } from './num.ts';
+export { median, percentile };
 
 /**
  * Ink is anything meaningfully darker or more saturated than the background.
@@ -738,7 +775,7 @@ function polylineLength(p: Vec2[]): number {
 // for several points before any real mistake is made.
 
 /** Bilinear sample of a scalar field, clamped at the edges. */
-function sample(f: Float64Array, w: number, h: number, x: number, y: number): number {
+export function sample(f: Float64Array | Float32Array, w: number, h: number, x: number, y: number): number {
   const cx = Math.max(0, Math.min(w - 1.001, x));
   const cy = Math.max(0, Math.min(h - 1.001, y));
   const x0 = Math.floor(cx);

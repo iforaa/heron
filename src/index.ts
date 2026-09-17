@@ -38,6 +38,7 @@ export type {
   FieldForm, MorphThroughOptions, PaintRef, PaintValue, PaintDefinition,
   ClipRef, ClipDefinition, MaskRef, MaskDefinition, MaskOptions, Definition,
   GradientStop, GradientUnits, GradientSpread, LinearGradientOptions, RadialGradientOptions,
+  KeyTuple, ShapeSpec,
 } from './scene.ts';
 
 export {
@@ -49,7 +50,7 @@ export { spring, settleTime, criticalDamping } from './spring.ts';
 export type { SpringOptions } from './spring.ts';
 
 export {
-  score, Score, cueSheet, CueSheet, during, within, withinAdditive, duringAdditive, density, stagger, swell, shift, ramp, hold,
+  score, Score, Windows, cueSheet, CueSheet, during, within, withinAdditive, duringAdditive, density, stagger, swell, shift, ramp, hold,
 } from './score.ts';
 export type { Beat, CueSpan, Shape, StaggerOptions, AdditiveOptions } from './score.ts';
 
@@ -94,7 +95,7 @@ export { seeded } from './random.ts';
 export type { NoiseOptions, AimOptions } from './motion.ts';
 
 export {
-  evaluate, netPose, nodePose, restPose, channelAt, trackAt, pointAt, worldMatrices, frameAt,
+  evaluate, netPose, nodePose, restPose, channelAt, trackAt, pointAt, worldMatrices, frameAt, lazyFrameAt,
   sampleFrames, invert, localMatrix,
 } from './timeline.ts';
 export type { Pose, NodePose, Frame, Mat, TrackSnapshot } from './timeline.ts';
@@ -129,7 +130,7 @@ export type { CompileReport, CompileOptions } from './compile.ts';
 
 export { compileLottie, lottieContours } from './lottie.ts';
 export type { LottieOptions, LottieReport, LottieResult } from './lottie.ts';
-export { checkLottie, renderLottieFrame } from './lottie-check.ts';
+export { checkLottie, hasCanvasKit, renderLottieFrame } from './lottie-check.ts';
 export type { LottieCheckOptions, LottieCheckReport, LottieCheckSample } from './lottie-check.ts';
 
 export { studio, curves, sampleCurves } from './studio.ts';
@@ -150,6 +151,7 @@ export type { ImportSvgOptions, ImportSvgResult } from './import-svg.ts';
 export { hasPotrace, outlinePaths } from './outline.ts';
 export type { OutlineOptions } from './outline.ts';
 export type { TraceOptions, TraceResult } from './trace.ts';
+export type { RefineReport } from './refine.ts';
 export { match, matchBitmap, formatMatch } from './match.ts';
 export type { MatchReport, MatchOptions, WidthProbe } from './match.ts';
 export {

@@ -24,7 +24,7 @@
 import { type Character, type ChannelName, activeChannels } from './scene.ts';
 import { channelAt } from './timeline.ts';
 import { compile } from './compile.ts';
-import { round } from './render.ts';
+import { round } from './num.ts';
 import type { Score } from './score.ts';
 
 export interface Curve {

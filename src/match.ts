@@ -19,7 +19,6 @@
  */
 
 import { evaluate } from './timeline.ts';
-import { sceneBox } from './geometry.ts';
 import { nodeSvg, svgOpen } from './render.ts';
 import type { Character } from './scene.ts';
 import {
@@ -177,7 +176,7 @@ export function matchBitmap(ch: Character, refBm: Bitmap, o: MatchOptions = {}):
   const ref = inkMask(refBm, o.threshold);
 
   const svg = sceneInReferenceSpace(ch, o.t ?? 0, refBm.width, refBm.height, refBm.scale);
-  const sceneBm: Bitmap = rasterise(svg, refBm.width, refBm.height);
+  const sceneBm: Bitmap = rasterise(svg, refBm.width);
   const scene = inkMask(sceneBm, o.threshold);
 
   let both = 0;
@@ -307,6 +306,3 @@ export function formatMatch(r: MatchReport, name: string): string {
   );
   return lines.join('\n');
 }
-
-/** Ink bounds of the scene, for checking it sits where the reference does. */
-export { sceneBox };

@@ -24,7 +24,6 @@ import { hasPotrace, outlinePaths } from './outline.ts';
 import { fitCircle, fitLine } from './fit.ts';
 import { type RefineReport, refine } from './refine.ts';
 import { coverage } from './raster.ts';
-import { arcPath } from './scene.ts';
 import type { Vec2 } from './scene.ts';
 
 export interface TraceOptions {

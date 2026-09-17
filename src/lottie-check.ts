@@ -35,6 +35,16 @@ export interface LottieCheckReport {
 }
 
 let canvasKitPromise: Promise<any> | undefined;
+
+/** Whether the optional Skottie player is installed, so callers can skip rather than fail. */
+export function hasCanvasKit(): boolean {
+  try {
+    createRequire(import.meta.url).resolve('canvaskit-wasm/bin/full/canvaskit.js');
+    return true;
+  } catch {
+    return false;
+  }
+}
 let canvasKitVersion = 'unknown';
 
 async function canvasKit(): Promise<any> {
@@ -133,7 +143,6 @@ export async function checkLottie(
       iou: match.iou, inkRatio: match.inkRatio,
     });
   }
-  const CK = await canvasKit();
   const worstOverlap = Math.min(...samples.map((sample) => sample.softIou));
   return {
     renderer: 'Skia Skottie',

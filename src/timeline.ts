@@ -8,7 +8,7 @@
 
 import {
   type Channel, type Character, type ChannelName, type Node, type Track, type Vec2,
-  NEUTRAL, activeChannels,
+  CHANNELS, NEUTRAL,
 } from './scene.ts';
 
 export type NodePose = Record<ChannelName, number>;
@@ -46,7 +46,10 @@ export function trackAt(track: Track | undefined, t: number): NodePose {
   const shifted = t + (track.phase ?? 0);
   const local = shifted === 1 ? 1 : ((shifted % 1) + 1) % 1;
   const pose = { ...REST };
-  for (const name of activeChannels(track)) pose[name] = channelAt(track[name]!, local);
+  for (const name of CHANNELS) {
+    const channel = track[name];
+    if (channel !== undefined) pose[name] = channelAt(channel, local);
+  }
   return pose;
 }
 
@@ -139,14 +142,19 @@ export function localMatrix(pose: NodePose, pivot?: Vec2): Mat {
   const rad = (pose.rotate * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
-  const t: Mat = [1, 0, 0, 1, pose.x, pose.y];
-  const toPivot: Mat = [1, 0, 0, 1, px, py];
-  const rot: Mat = [cos, sin, -sin, cos, 0, 0];
-  const skewX: Mat = [1, 0, Math.tan((pose.skewX * Math.PI) / 180), 1, 0, 0];
-  const skewY: Mat = [1, Math.tan((pose.skewY * Math.PI) / 180), 0, 1, 0, 0];
-  const scl: Mat = [pose.scaleX, 0, 0, pose.scaleY, 0, 0];
-  const fromPivot: Mat = [1, 0, 0, 1, -px, -py];
-  return mul(mul(mul(mul(mul(mul(t, toPivot), rot), skewX), skewY), scl), fromPivot);
+  // The linear part: rotate, skew, scale. The three translations around it
+  // (move, to pivot, back from pivot) collapse to one offset, and the two skews
+  // are almost always zero, so they are only multiplied in when they are not.
+  let linear: Mat = [cos * pose.scaleX, sin * pose.scaleX, -sin * pose.scaleY, cos * pose.scaleY, 0, 0];
+  if (pose.skewX !== 0 || pose.skewY !== 0) {
+    const rot: Mat = [cos, sin, -sin, cos, 0, 0];
+    const skewX: Mat = [1, 0, Math.tan((pose.skewX * Math.PI) / 180), 1, 0, 0];
+    const skewY: Mat = [1, Math.tan((pose.skewY * Math.PI) / 180), 0, 1, 0, 0];
+    const scl: Mat = [pose.scaleX, 0, 0, pose.scaleY, 0, 0];
+    linear = mul(mul(mul(rot, skewX), skewY), scl);
+  }
+  const [a, b, c, d] = linear;
+  return [a, b, c, d, pose.x + px - (a * px + c * py), pose.y + py - (b * px + d * py)];
 }
 
 /**
@@ -203,6 +211,89 @@ export function frameAt(ch: Character, t: number, tracks?: TrackSnapshot): Frame
     for (const item of node.content) if ('node' in item) walk(item.node, m);
   };
   walk(ch.root, IDENTITY);
+
+  return {
+    t,
+    pose,
+    matrices,
+    point(node, local) {
+      const m = matrices.get(node.path);
+      if (!m) throw new Error(`heron: no world transform for "${node.path}"`);
+      return apply(m, local ?? node.contact ?? node.pivot ?? [0, 0]);
+    },
+  };
+}
+
+/**
+ * A map that computes an entry the first time it is asked for.
+ *
+ * Iterating or measuring it fills every entry first, so it behaves as the
+ * complete map to anything that walks it; only lookups stay cheap.
+ */
+class LazyMap<V> extends Map<string, V> {
+  #filled = false;
+  readonly #resolve: (key: string) => V | undefined;
+  readonly #all: () => Iterable<string>;
+  constructor(resolve: (key: string) => V | undefined, all: () => Iterable<string>) {
+    super();
+    this.#resolve = resolve;
+    this.#all = all;
+  }
+  override get(key: string): V | undefined {
+    if (super.has(key)) return super.get(key);
+    const value = this.#resolve(key);
+    if (value !== undefined) super.set(key, value);
+    return value;
+  }
+  override has(key: string): boolean {
+    return this.get(key) !== undefined;
+  }
+  #fill(): void {
+    if (this.#filled) return;
+    for (const key of this.#all()) this.get(key);
+    this.#filled = true;
+  }
+  override get size(): number { this.#fill(); return super.size; }
+  override entries(): MapIterator<[string, V]> { this.#fill(); return super.entries(); }
+  override keys(): MapIterator<string> { this.#fill(); return super.keys(); }
+  override values(): MapIterator<V> { this.#fill(); return super.values(); }
+  override forEach(fn: (value: V, key: string, map: Map<string, V>) => void, thisArg?: unknown): void {
+    this.#fill();
+    super.forEach(fn, thisArg);
+  }
+  override [Symbol.iterator](): MapIterator<[string, V]> { return this.entries(); }
+}
+
+/**
+ * The scene at time t, posed only as far as it is asked about.
+ *
+ * Identical to `frameAt` in what it answers — the same poses, the same
+ * matrices — but nothing is evaluated until a part is looked up, and then only
+ * that part and its ancestors. A behaviour solving one limb thousands of times
+ * (`reach()` samples its chain on a dense grid) asks about a handful of parts
+ * each time, and posing a 140-part scene for each of those answers was where
+ * a scene's whole compile time went.
+ */
+export function lazyFrameAt(ch: Character, t: number, tracks?: TrackSnapshot): Frame {
+  const byPath = new Map<string, Node>();
+  const index = (node: Node) => {
+    byPath.set(node.path, node);
+    for (const item of node.content) if ('node' in item) index(item.node);
+  };
+  index(ch.root);
+  const paths = () => byPath.keys();
+
+  const pose: Pose = new LazyMap<NodePose[]>((path) => {
+    const node = byPath.get(path);
+    return node && (tracks?.get(path) ?? node.tracks).map((track) => trackAt(track, t));
+  }, paths);
+  const matrices: Map<string, Mat> = new LazyMap<Mat>((path) => {
+    const node = byPath.get(path);
+    if (!node) return undefined;
+    const cut = path.lastIndexOf('.');
+    const parent = path === '' ? IDENTITY : matrices.get(cut < 0 ? '' : path.slice(0, cut))!;
+    return mul(mul(parent, localMatrix(restPose(node), node.pivot)), stackMatrix(pose.get(path), node.pivot));
+  }, paths);
 
   return {
     t,

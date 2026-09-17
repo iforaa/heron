@@ -19,6 +19,7 @@
  */
 
 import type { Vec2 } from './scene.ts';
+import { median } from './num.ts';
 
 /**
  * Both fits reject outliers before trusting themselves, and it is not optional.
@@ -68,10 +69,6 @@ function refit<T>(
   return model ? { model, inliers: use } : null;
 }
 
-function median(xs: number[]): number {
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-}
 
 /**
  * The largest `f` over the points, by a plain loop.

@@ -12,10 +12,10 @@ import {
   sampled, type Channel, type Character, type Node, type Vec2,
 } from './scene.ts';
 import {
-  apply, frameAt, invert, nodePose, type Frame, type TrackSnapshot,
+  apply, invert, lazyFrameAt, nodePose, type Frame, type TrackSnapshot,
 } from './timeline.ts';
+import { DEG, clamp, wrapDegrees } from './num.ts';
 
-const DEG = 180 / Math.PI;
 const EPSILON = 1e-12;
 
 export type ReachStatus = 'reachable' | 'too-close' | 'too-far';
@@ -65,9 +65,6 @@ function finitePoint(name: string, p: Vec2): void {
   }
 }
 
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
-}
 
 /**
  * Wraps to (-180, 180], preferring +180 over -180: a fully folded joint should
@@ -75,10 +72,6 @@ function clamp(v: number, lo: number, hi: number): number {
  * hands out — analytic solutions and additive corrections alike — goes through
  * this one rule, so the fold-over boundary cannot mean two different things.
  */
-function wrapDegrees(value: number): number {
-  const wrapped = ((value + 180) % 360 + 360) % 360 - 180;
-  return Math.abs(wrapped + 180) < 1e-10 ? 180 : wrapped;
-}
 
 /** Keeps public angles small and makes equivalent branches compare cleanly. */
 function degrees(rad: number): number {
@@ -268,7 +261,7 @@ export function reach(ch: Character, o: ReachOptions): Reach {
   const at = (t: number): ReachPose => {
     let got = cache.get(t);
     if (got) return got;
-    const frame = frameAt(ch, t, captured);
+    const frame = lazyFrameAt(ch, t, captured);
     const parentMatrix = frame.matrices.get(parent.path);
     if (!parentMatrix) throw new Error(`heron: reach() cannot evaluate parent "${parent.path}"`);
     const toParent = invert(parentMatrix);

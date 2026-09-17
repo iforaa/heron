@@ -12,15 +12,8 @@ import { pathAt } from './path-morph.ts';
 import {
   type Box, boxOfCorners, dashOffset, mergeBoxes, strokeLength, subtreeCorners,
 } from './geometry.ts';
-import { type Mat, type NodePose, type Pose, REST, evaluate, frameAt, netPose, restPose } from './timeline.ts';
-
-// Compatibility re-exports. Geometry lives in geometry.ts; existing callers of
-// render.ts keep working while measurement code can depend on the smaller seam.
-export {
-  boxOfCorners, dashOffset, frameBox, localCorners, mergeBoxes, partBox, pathLength,
-  pathPoints, sceneBox, shapeBox, shapeLength, strokeLength, subtreeCorners,
-} from './geometry.ts';
-export type { Box } from './geometry.ts';
+import { type Mat, type NodePose, type Pose, REST, evaluate, frameAt, restPose } from './timeline.ts';
+import { round } from './num.ts';
 
 function attrs(a: Record<string, string | number>): string {
   return Object.entries(a)
@@ -28,10 +21,6 @@ function attrs(a: Record<string, string | number>): string {
     .join(' ');
 }
 
-export function round(n: number, places = 3): number {
-  const f = 10 ** places;
-  return Math.round(n * f) / f;
-}
 
 export function shapeSvg(s: ShapeSpec, t = 0, className?: string): string {
   const rendered = { ...s.attrs };

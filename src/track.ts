@@ -22,7 +22,7 @@ import type { Character, Node, Vec2 } from './scene.ts';
 import type { CueSheet, Score } from './score.ts';
 import { type Frame, frameAt, nodePose } from './timeline.ts';
 import { type Box, boxOfCorners, mergeBoxes, subtreeCorners } from './geometry.ts';
-import { round } from './render.ts';
+import { median, round } from './num.ts';
 
 /** Which stretch of the cycle was measured. */
 export type TrackWindow =
@@ -155,6 +155,13 @@ export interface TrackOptions {
   samples?: number;
   /** Exact normalized instants to measure, for delivery-frame diagnostics. */
   times?: number[];
+  /**
+   * Where to get a posed frame, when the caller already has them.
+   *
+   * `lint` poses every delivery frame once for its own rules and then measures
+   * the same instants here; posing them a second time was half of a film's lint.
+   */
+  frameAt?: (t: number) => Frame;
   window?: TrackWindow;
   timeline?: Score | CueSheet;
   /** One cell per cue: sample each cue's own window densely. */
@@ -460,11 +467,6 @@ export function plantedRun(points: Vec2[], height: number, cyclic: boolean): Pla
   return { flags: points.map((_, i) => run.has(i)), indices, deltas };
 }
 
-function median(values: number[]): number {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-}
 
 /** Contiguous stretches of samples for which `flag` holds, as index ranges. */
 function runsOf(flags: boolean[]): Array<[number, number]> {
@@ -519,8 +521,9 @@ export function trackParts(ch: Character, o: TrackOptions): TrackReport {
   const nodes = new Map(ch.nodes().map((node) => [node.path, node]));
 
   // The single pass. Everything below reads from what this collected.
+  const pose = o.frameAt ?? ((t: number) => frameAt(ch, t));
   const posed = list.map((slot) => {
-    const frame = frameAt(ch, slot.t);
+    const frame = pose(slot.t);
     const memo = new Map<string, number>();
     return {
       slot,

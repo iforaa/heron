@@ -7,11 +7,8 @@
  */
 import type { Character, Node, ShapeSpec, Vec2 } from './scene.ts';
 import { type Frame, type Mat, apply, frameAt } from './timeline.ts';
+import { round } from './num.ts';
 
-function round(n: number, places = 3): number {
-  const f = 10 ** places;
-  return Math.round(n * f) / f;
-}
 
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 

@@ -15,14 +15,16 @@
  * A part is never silently degraded: `compile` reports which parts were baked.
  */
 
-import { type Channel, type Character, type ChannelName, type Node, type Track, CHANNELS, NEUTRAL, activeChannels } from './scene.ts';
+import {
+  type Channel, type Character, type ChannelName, type Node, type Track, CHANNELS, NEUTRAL, activeChannels, holdEnds,
+} from './scene.ts';
 import { channelAt } from './timeline.ts';
 import type { Easing } from './easing.ts';
 import { dashOffset, strokeLength } from './geometry.ts';
 import {
-  block, cssClass, definitionsSvg, listShapes, nodeSvg, outputSize, renderContext,
-  round, svgOpen,
+  block, cssClass, definitionsSvg, listShapes, nodeSvg, outputSize, renderContext, svgOpen,
 } from './render.ts';
+import { round } from './num.ts';
 
 /** Maximum deviation permitted when refitting a sampled curve, per channel. */
 export const EPSILON = {
@@ -78,13 +80,8 @@ function bakeReason(chans: Channel[]): string | null {
 
 /** Douglas-Peucker over sampled values: keep the fewest times that reproduce
  *  every channel within EPSILON under linear interpolation. */
-function fit(times: number[], series: Map<Name, number[]>): number[] {
+function fit(times: number[], series: Map<Name, number[]>, budget: number): number[] {
   const keep = new Set<number>([0, times.length - 1]);
-  // Keep half the published budget in reserve for interpolation between the
-  // verification samples and for numeric serialization. Spending the whole
-  // EPSILON at sampled instants let a long camera move cross the limit between
-  // two of them even after its keyframe percentages were serialized exactly.
-  const FIT_BUDGET = 0.5;
 
   const worst = (lo: number, hi: number): { idx: number; err: number } => {
     let idx = -1;
@@ -103,7 +100,7 @@ function fit(times: number[], series: Map<Name, number[]>): number[] {
   const split = (lo: number, hi: number) => {
     if (hi - lo < 2) return;
     const { idx, err } = worst(lo, hi);
-    if (idx < 0 || err <= FIT_BUDGET) return;
+    if (idx < 0 || err <= budget) return;
     keep.add(idx);
     split(lo, idx);
     split(idx, hi);
@@ -210,16 +207,31 @@ function easeSuffix(ease: Easing, last: boolean): string {
 }
 
 /**
- * A keyframe percentage precise enough that serialization cannot spend the
- * compiler's geometric error budget.
+ * How much of EPSILON the fitter may spend at the sampled instants, in the
+ * order tried.
  *
- * Two decimal places of *percent* looked precise and was not: on a long camera
- * move, moving a fitted key by 0.005% moved the shipped drawing many times
- * farther than EPSILON.x. Ten decimal places of percent put the time error below
- * 5e-13 of a cycle while still producing ordinary, portable CSS numbers.
+ * The rest is reserve for the curve between verification samples and for
+ * serialization. Spending the whole budget once let a long camera move cross
+ * the limit between two samples, so the fit never asks for all of it; but
+ * spending only half emitted a third more keyframes than the verifier needed
+ * on every baked scene, so the generous budget is tried first and the cautious
+ * one is the fallback when the serialized replay rejects it.
  */
-function percentage(t: number): string {
-  return (t * 100).toFixed(10)
+const FIT_BUDGETS = [0.8, 0.5] as const;
+
+/**
+ * Decimal places of *percent* a baked keyframe time may be written with, in the
+ * order tried. Two looked precise and was not: on a long camera move, moving a
+ * fitted key by 0.005% moved the shipped drawing many times farther than
+ * EPSILON.x. Ten put the time error below 5e-13 of a cycle. Most scenes need
+ * far fewer, and the verifier — which replays exactly what is serialized — is
+ * what decides, block by block.
+ */
+const PERCENT_PLACES = [2, 4, 6, 10] as const;
+
+/** A keyframe percentage at the given precision, without trailing zeros. */
+function percentage(t: number, places = 10): string {
+  return (t * 100).toFixed(places)
     .replace(/(\.[0-9]*?[1-9])0+$/, '$1')
     .replace(/\.0+$/, '');
 }
@@ -245,19 +257,14 @@ function keyframeLines(
   if (!reason) {
     const ref = chans[0] as Extract<Channel, { kind: 'keys' }>;
     // CSS synthesizes an omitted 0%/100% key from the element's underlying
-    // style; Heron's evaluator holds the nearest authored value. Name both
-    // endpoints explicitly so a channel beginning at t=.5 does not animate from
-    // its neutral rest pose for the first half of browser playback.
-    const timeline = [...ref.keys];
-    if (timeline[0].t > 0) timeline.unshift({ ...timeline[0], t: 0 });
-    if (timeline[timeline.length - 1].t < 1) {
-      timeline.push({ ...timeline[timeline.length - 1], t: 1 });
-    }
+    // style, so a channel beginning at t=.5 would otherwise animate from its
+    // neutral rest pose for the first half of browser playback.
+    const timeline = holdEnds(ref.keys);
     const lines = timeline.map((k, i) => {
       const vals: Partial<Record<Name, number>> = {};
       for (const n of names) vals[n] = channelAt(track[n]!, k.t);
       const timing = easeSuffix(k.ease, i === timeline.length - 1);
-      return `      ${percentage(k.t)}% { ${body(vals)}${timing} }`;
+      return `    ${percentage(k.t)}% { ${body(vals)}${timing} }`;
     });
     report.parts.push({ path, layer, mode: 'exact', keyframes: lines.length });
     report.certification.exactChannels += names.length;
@@ -288,39 +295,69 @@ function keyframeLines(
     series.set(name, values);
   }
 
-  const retained = fit(times, series);
   // Verify what is actually serialized: rounded CSS values at rounded percent
   // positions, linearly replayed between retained keys. This is the last seam
   // before disk, and checking ideal floating-point keys here would certify a
-  // different artifact than the one a browser receives.
-  for (const [name, values] of series) {
-    let segment = 0;
-    for (let i = 0; i < times.length; i++) {
-      while (segment < retained.length - 2 && i > retained[segment + 1]) segment++;
-      const ia = retained[segment];
-      const ib = retained[Math.min(segment + 1, retained.length - 1)];
-      const ta = Number(percentage(times[ia])) / 100;
-      const tb = Number(percentage(times[ib])) / 100;
-      const u = (times[i] - ta) / (tb - ta || 1);
-      const a = round(values[ia]);
-      const b = round(values[ib]);
-      const replayed = a + (b - a) * Math.max(0, Math.min(1, u));
-      const error = Math.abs(replayed - values[i]);
-      report.certification.replayChecks++;
-      report.certification.maxError[name] = Math.max(report.certification.maxError[name] ?? 0, error);
-      if (error > EPSILON[name] + 1e-9) {
-        throw new Error(
-          `heron: serialized ${path || '(root)'}.${name} exceeds EPSILON at t=${times[i]}`
-          + ` (${Math.abs(replayed - values[i])} > ${EPSILON[name]})`,
-        );
+  // different artifact than the one a browser receives. It is also the judge
+  // of how much budget the fit may spend and how short the percentages may be.
+  const replay = (retained: number[], places: number) => {
+    const serializedTimes = retained.map((i) => Number(percentage(times[i], places)) / 100);
+    const maxError: Partial<Record<Name, number>> = {};
+    let checks = 0;
+    let worst: { name: Name; t: number; error: number } | undefined;
+    for (const [name, values] of series) {
+      let segment = 0;
+      for (let i = 0; i < times.length; i++) {
+        while (segment < retained.length - 2 && i > retained[segment + 1]) segment++;
+        const ia = retained[segment];
+        const ib = retained[Math.min(segment + 1, retained.length - 1)];
+        const ta = serializedTimes[segment];
+        const tb = serializedTimes[Math.min(segment + 1, retained.length - 1)];
+        const u = (times[i] - ta) / (tb - ta || 1);
+        const a = round(values[ia]);
+        const b = round(values[ib]);
+        const replayed = a + (b - a) * Math.max(0, Math.min(1, u));
+        const error = Math.abs(replayed - values[i]);
+        checks++;
+        maxError[name] = Math.max(maxError[name] ?? 0, error);
+        if (error > EPSILON[name] + 1e-9 && (!worst || error / EPSILON[name] > worst.error / EPSILON[worst.name])) {
+          worst = { name, t: times[i], error };
+        }
       }
     }
+    return { checks, maxError, worst };
+  };
+
+  let chosen: { retained: number[]; places: number; maxError: Partial<Record<Name, number>>; checks: number } | undefined;
+  let rejected: { name: Name; t: number; error: number } | undefined;
+  search: for (const budget of FIT_BUDGETS) {
+    const retained = fit(times, series, budget);
+    for (const places of PERCENT_PLACES) {
+      const { checks, maxError, worst } = replay(retained, places);
+      report.certification.replayChecks += checks;
+      if (!worst) {
+        chosen = { retained, places, maxError, checks };
+        break search;
+      }
+      rejected = worst;
+    }
+  }
+  if (!chosen) {
+    const { name, t, error } = rejected!;
+    throw new Error(
+      `heron: serialized ${path || '(root)'}.${name} exceeds EPSILON at t=${t}`
+      + ` (${error} > ${EPSILON[name]})`,
+    );
+  }
+  for (const [name, error] of Object.entries(chosen.maxError) as [Name, number][]) {
+    report.certification.maxError[name] = Math.max(report.certification.maxError[name] ?? 0, error);
   }
 
+  const { retained, places } = chosen;
   const lines = retained.map((i) => {
     const vals: Partial<Record<Name, number>> = {};
     for (const [name, arr] of series) vals[name] = arr[i];
-    return `      ${percentage(times[i])}% { ${body(vals)} }`;
+    return `    ${percentage(times[i], places)}% { ${body(vals)} }`;
   });
   report.parts.push({ path, layer, mode: 'baked', keyframes: lines.length, reason });
   report.certification.bakedChannels += names.length;
@@ -337,6 +374,7 @@ function keyframeLines(
  */
 function emitLayer(
   node: Node, layer: number, duration: number, repeat: string, report: CompileReport,
+  bodies: Map<string, string>, aliases: Map<string, string>,
 ): Emitted | null {
   const track = node.tracks[layer];
   if (repeat.startsWith('1 ') && track.phase !== undefined) {
@@ -361,13 +399,23 @@ function emitLayer(
     if (!names.length) continue;
     const anim = keyframeName(node.path, layer, names[0]);
     const { lines } = keyframeLines(track, names, group, dash, report, node.path, layer);
-    animations.push(`${anim} ${duration}s linear${delay} ${repeat}`);
-    keyframes.push(`    @keyframes ${anim} {\n${lines.join('\n')}\n    }`);
+    // Two parts animated by the same keys — a far leg mirroring a near one —
+    // produce the same block, and a stylesheet needs it only once. The first
+    // part to write a body names it; later parts play that name.
+    const key = lines.join('\n');
+    const shared = bodies.get(key);
+    if (shared) {
+      aliases.set(anim, shared);
+    } else {
+      bodies.set(key, anim);
+      keyframes.push(`  @keyframes ${anim} {\n${key}\n  }`);
+    }
+    animations.push(`${shared ?? anim} ${duration}s linear${delay} ${repeat}`);
   }
 
   const origin = node.pivot ? `transform-origin: ${round(node.pivot[0])}px ${round(node.pivot[1])}px;` : '';
   return {
-    rule: `    .${cssClass(node.path, layer)} { ${origin} animation: ${animations.join(', ')}; }`,
+    rule: `  .${cssClass(node.path, layer)} { ${origin} animation: ${animations.join(', ')}; }`,
     keyframes,
   };
 }
@@ -380,7 +428,7 @@ export interface CompileOptions {
 
 export function compile(
   ch: Character, opts: CompileOptions = {},
-): { svg: string; report: CompileReport; animated: string[] } {
+): { svg: string; report: CompileReport; animated: string[]; keyframes: Map<string, string> } {
   const { width, height } = outputSize(ch, opts.width);
   const report: CompileReport = {
     parts: [],
@@ -400,6 +448,10 @@ export function compile(
   const rules: string[] = [];
   const frames: string[] = [];
   const animated: string[] = [];
+  /** Keyframe body -> the name of the block that carries it. */
+  const bodies = new Map<string, string>();
+  /** A part's own keyframe name -> the shared block it plays instead. */
+  const keyframes = new Map<string, string>();
 
   // A film runs its keyframes once and keeps the last one. `forwards` is what
   // holds it: without it the element snaps back to its unanimated state the
@@ -408,7 +460,7 @@ export function compile(
 
   for (const node of ch.nodes()) {
     for (let layer = 0; layer < node.tracks.length; layer++) {
-      const e = emitLayer(node, layer, ch.duration, repeat, report);
+      const e = emitLayer(node, layer, ch.duration, repeat, report, bodies, keyframes);
       if (!e) continue;
       rules.push(e.rule);
       frames.push(...e.keyframes);
@@ -423,13 +475,13 @@ export function compile(
     const className = `h-morph-${morphIndex}`;
     const frameName = `kf-morph-${morphIndex++}`;
     context.morphClasses.set(shape, className);
-    rules.push(`    .${className} { animation: ${frameName} ${ch.duration}s linear ${repeat}; }`);
+    rules.push(`  .${className} { animation: ${frameName} ${ch.duration}s linear ${repeat}; }`);
     const lines = shape.morph.keys.map((key, i, keys) => {
       const d = key.d.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       const timing = easeSuffix(key.ease, i === keys.length - 1);
-      return `      ${percentage(key.t)}% { d: path("${d}");${timing} }`;
+      return `    ${percentage(key.t)}% { d: path("${d}");${timing} }`;
     });
-    frames.push(`    @keyframes ${frameName} {\n${lines.join('\n')}\n    }`);
+    frames.push(`  @keyframes ${frameName} {\n${lines.join('\n')}\n  }`);
     animated.push('.' + className);
     report.morphs.push({ index: morphIndex - 1, keyframes: lines.length });
   }
@@ -442,10 +494,10 @@ export function compile(
   // transform-box: view-box makes transform-origin absolute in viewBox space,
   // which is what lets a pivot be written as the joint's rest-pose coordinate
   // at every depth of the rig.
-  const baseRule = animated.length ? `    ${animated.join(', ')} { transform-box: view-box; }` : '';
+  const baseRule = animated.length ? `  ${animated.join(', ')} { transform-box: view-box; }` : '';
   const reduced =
     opts.reducedMotion !== false && animated.length
-      ? `\n    @media (prefers-reduced-motion: reduce) {\n      ${animated.join(', ')} { animation: none; }\n    }`
+      ? `\n  @media (prefers-reduced-motion: reduce) {\n    ${animated.join(', ')} { animation: none; }\n  }`
       : '';
 
   const style = [baseRule, ...rules, ...frames].filter(Boolean).join('\n') + reduced;
@@ -458,5 +510,5 @@ export function compile(
     nodeSvg(ch.root, new Map(), '  ', undefined, context),
     '</svg>',
   ) + '\n';
-  return { svg, report, animated };
+  return { svg, report, animated, keyframes };
 }

@@ -35,9 +35,9 @@
  * be represented, so it cannot be learned, and no blur pass is needed.
  */
 
-import { type Coverage, coverage, rasterise } from './raster.ts';
+import { type Coverage, coverage, rasterise, sample, softOverlap } from './raster.ts';
 import { type Model, evalScalar, fitScalar, model } from './smooth.ts';
-import { ribbonPath } from './scene.ts';
+import { normalAt, ribbonPath } from './scene.ts';
 import type { Vec2 } from './scene.ts';
 
 export interface Ribbon {
@@ -68,30 +68,7 @@ export interface RefineReport {
 }
 
 /** Bilinear sample of a coverage field, clamped at the edges. */
-function at(c: Coverage, x: number, y: number): number {
-  const cx = Math.max(0, Math.min(c.width - 1.001, x));
-  const cy = Math.max(0, Math.min(c.height - 1.001, y));
-  const x0 = Math.floor(cx);
-  const y0 = Math.floor(cy);
-  const fx = cx - x0;
-  const fy = cy - y0;
-  const i = y0 * c.width + x0;
-  return (
-    c.data[i] * (1 - fx) * (1 - fy) + c.data[i + 1] * fx * (1 - fy) +
-    c.data[i + c.width] * (1 - fx) * fy + c.data[i + c.width + 1] * fx * fy
-  );
-}
-
-function normalAt(points: Vec2[], i: number, closed: boolean): Vec2 {
-  const n = points.length;
-  const get = (k: number) => (closed ? points[((k % n) + n) % n] : points[Math.max(0, Math.min(n - 1, k))]);
-  const a = get(i - 1);
-  const b = get(i + 1);
-  const dx = b[0] - a[0];
-  const dy = b[1] - a[1];
-  const len = Math.hypot(dx, dy) || 1;
-  return [-dy / len, dx / len];
-}
+const at = (c: Coverage, x: number, y: number): number => sample(c.data, c.width, c.height, x, y);
 
 /**
  * A run held as control points, plus the geometry they currently produce.
@@ -148,15 +125,8 @@ function svgOf(statics: string[], ribbons: Ribbon[], ink: string, w: number, h: 
     + '</svg>';
 }
 
-function score(ref: Coverage, c: Coverage): number {
-  let lo = 0;
-  let hi = 0;
-  for (let i = 0; i < ref.data.length; i++) {
-    lo += Math.min(ref.data[i], c.data[i]);
-    hi += Math.max(ref.data[i], c.data[i]);
-  }
-  return hi ? lo / hi : 0;
-}
+/** Soft IoU as a fraction, the same measure `match` reports as a percentage. */
+const score = (ref: Coverage, c: Coverage): number => softOverlap(ref, c) / 100;
 
 /** A ribbon that shares nothing mutable with the one it came from. */
 const copy = (r: Ribbon): Ribbon => ({ ...r, points: [...r.points], widths: [...r.widths] });
@@ -196,7 +166,7 @@ export function refine(
   // The score of the raw measurement, before the basis has had a say. Reported
   // as `before` so the number covers everything this pass does, including the
   // accuracy it gives up by refusing to represent noise.
-  const before = score(reference, coverage(rasterise(svgOf(statics, ribbons, ink, w, h), w, h)));
+  const before = score(reference, coverage(rasterise(svgOf(statics, ribbons, ink, w, h), w)));
 
   let best = ribbons.map(fit);
   // The rendered coverage of `best` is carried alongside its score, because the
@@ -204,7 +174,7 @@ export function refine(
   // it at the top of the loop was the single most expensive thing in `trace`:
   // one render at 1024x1024 costs ~250ms, and it was being paid twice a round to
   // produce a bitmap already in hand.
-  let bestCov = coverage(rasterise(svgOf(statics, shapes(best), ink, w, h), w, h));
+  let bestCov = coverage(rasterise(svgOf(statics, shapes(best), ink, w, h), w));
   let bestScore = score(reference, bestCov);
   let step = o.step ?? 0.8;
   let used = 0;
@@ -253,7 +223,7 @@ export function refine(
       evaluate(f);
     }
 
-    const nextCov = coverage(rasterise(svgOf(statics, shapes(next), ink, w, h), w, h));
+    const nextCov = coverage(rasterise(svgOf(statics, shapes(next), ink, w, h), w));
     const got = score(reference, nextCov);
     used = round + 1;
     if (got > bestScore) {

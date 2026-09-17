@@ -9,12 +9,11 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Resvg } from '@resvg/resvg-js';
+import { resvgOptions } from './raster.ts';
 
 import type { Character } from './scene.ts';
 import { playbackTimes } from './delivery.ts';
 import { outputSize, renderContext, renderStatic } from './render.ts';
-
-export { playbackTimes } from './delivery.ts';
 
 export interface VideoOptions {
   width?: number;
@@ -140,10 +139,10 @@ export async function renderVideo(
   const context = renderContext(ch);
   for (const t of times) {
     const svg = renderStatic(ch, t, { width, context });
-    const image = new Resvg(svg, {
+    const image = new Resvg(svg, resvgOptions({
       fitTo: { mode: 'width', value: width },
       background: o.background ?? 'white',
-    }).render();
+    })).render();
     await write(image.pixels);
   }
   child.stdin.end();

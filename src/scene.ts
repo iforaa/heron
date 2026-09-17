@@ -531,7 +531,23 @@ export class FieldHandle {
   }
 }
 
-/** Extends a key list to the cycle ends, holding its first and last values. */
+/**
+ * A key list extended to both ends of the cycle, holding its first and last
+ * values.
+ *
+ * The evaluator holds the nearest authored value outside the keyed interval.
+ * CSS and Lottie would instead synthesize an endpoint from the element's
+ * underlying state, so every backend names both endpoints explicitly, and this
+ * is the one place that says how.
+ */
+export function holdEnds<K extends { t: number }>(keys: K[]): K[] {
+  const out = [...keys];
+  if (out[0].t > 0) out.unshift({ ...out[0], t: 0 });
+  if (out[out.length - 1].t < 1) out.push({ ...out[out.length - 1], t: 1 });
+  return out;
+}
+
+/** `holdEnds` for the tuple form the DSL takes. */
 function padEnds(list: KeyTuple[]): KeyTuple[] {
   if (list[0][0] > 0) list.unshift([0, list[0][1]]);
   if (list[list.length - 1][0] < 1) list.push([1, list[list.length - 1][1]]);
@@ -1223,7 +1239,7 @@ export interface RibbonOptions {
 }
 
 /** Unit normal at `i`, from the direction between the neighbouring points. */
-function normalAt(points: Vec2[], i: number, closed: boolean): Vec2 {
+export function normalAt(points: Vec2[], i: number, closed: boolean): Vec2 {
   const n = points.length;
   const at = (k: number) => (closed ? points[((k % n) + n) % n] : points[Math.max(0, Math.min(n - 1, k))]);
   const a = at(i - 1);
@@ -1280,7 +1296,7 @@ export function ribbonPath(points: Vec2[], halfWidths: number[], o: RibbonOption
    * y-down SVG and at both ends. Half a turn is exactly the ambiguous case for
    * the large-arc flag, which is why it can be left at 0.
    */
-  const cap = (from: Vec2, to: Vec2, r: number): string => {
+  const cap = (to: Vec2, r: number): string => {
     if (o.cap === 'butt' || r < 0.05) return ` L${xy(to)}`;
     return ` A${n(r)},${n(r)} 0 0 0 ${xy(to)}`;
   };
@@ -1288,9 +1304,9 @@ export function ribbonPath(points: Vec2[], halfWidths: number[], o: RibbonOption
   const back = [...right].reverse();
   return `M${xy(left[0])}`
     + curveSegments(left, false, tension)
-    + cap(left[left.length - 1], back[0], halfWidths[halfWidths.length - 1])
+    + cap(back[0], halfWidths[halfWidths.length - 1])
     + curveSegments(back, false, tension)
-    + cap(back[back.length - 1], left[0], halfWidths[0])
+    + cap(left[0], halfWidths[0])
     + ' Z';
 }
 

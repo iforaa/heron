@@ -16,6 +16,7 @@
 import { type Channel, type Character, type Vec2, sampled } from './scene.ts';
 import { frameAt } from './timeline.ts';
 import { seeded } from './random.ts';
+import { DEG, wrapDegrees } from './num.ts';
 
 export interface NoiseOptions {
   /** Wobbles per cycle in the slowest band. Whole numbers only — see below. */
@@ -101,8 +102,5 @@ export function aim(ch: Character, path: string, o: AimOptions): number {
   // A mirrored ancestor reverses which way an increasing angle turns.
   const flip = own[0] * own[3] - own[1] * own[2] < 0 ? -1 : 1;
 
-  let deg = ((wants - has) * 180) / Math.PI * flip;
-  while (deg > 180) deg -= 360;
-  while (deg < -180) deg += 360;
-  return deg;
+  return wrapDegrees((wants - has) * DEG * flip);
 }
