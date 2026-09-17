@@ -16,8 +16,10 @@
  *     rings, and the ring is an additive layer over the exact keyed lift.
  *   - `noise()` is why the bird and the dragonfly are alive between beats, and
  *     it is periodic by construction so the loop closes.
- *   - `field()` + `stagger()` make the ripples a set of rings arriving one after
- *     another rather than one ring fading, which is what a splash actually is.
+ *   - `field()` + `stagger()` make the splash a set of wavelets leaving one after
+ *     another rather than one shape fading, which is what a splash actually is.
+ *     They run along the waterline rather than spreading as rings, because the
+ *     pond is seen from the side and a ring on a surface that flat is a line.
  *   - Nested parts keep the fish exact: carry, lift, spin and squash are four
  *     groups with their own keyframe lists, not one baked curve.
  */
@@ -25,7 +27,7 @@
 import {
   channelAt, character, circle, ellipse, field, keys, layer, line, noise, part, path, polygon,
   reach, rect, score, spring, stagger, within,
-  cubicBezier, easeIn, easeInOut, easeOut, type Character, type Vec2,
+  cubicBezier, easeIn, easeInOut, easeOut, type Beat, type Character, type Vec2,
 } from '../src/index.ts';
 
 const W = 800;
@@ -72,8 +74,6 @@ const beats = score(DURATION, [
 
 /** The fish is in the air from the moment the beak hits the water until the neck is back up. */
 const LEAP = beats.span('plunge', 'recoil');
-/** Rings spread from the plunge into the settle. */
-const RIPPLES = beats.span('plunge', 'settle');
 
 // --- the bird's measurements -------------------------------------------------
 // The neck is a two-bone chain: shoulder -> crook -> head. Rest lengths are
@@ -94,6 +94,11 @@ const HEAD: Vec2 = [
 const STRIKE_AT: Vec2 = [172, WATERLINE - 14];
 /** Where each droplet of the splash flies, relative to the strike point. */
 const DROPS: Array<[dx: number, dy: number]> = [[-34, -60], [-14, -78], [10, -70], [28, -52], [-50, -40]];
+/** How far each wavelet travels along the surface; sign is direction. */
+const WAVELETS: number[] = [-38, 44, -74, 82, -110, 118];
+/** Where the fish comes down, and the smaller wash it makes. */
+const LANDING_X = 80;
+const LANDING_WAVELETS: number[] = [-26, 30, -48, 54];
 
 // --- the stage ---------------------------------------------------------------
 
@@ -212,15 +217,26 @@ function fish(): void {
   });
 }
 
+/**
+ * The pond is seen from the side, so a splash cannot be rings: on a surface
+ * this flat a ring is a line. What reads instead is a crown of drops and a few
+ * short wavelets running away from the strike along the waterline, each one
+ * fast to leave, slow to stop, and stretched thin by the time it fades.
+ */
 function splash(): void {
   const at: Vec2 = [STRIKE_AT[0], WATERLINE];
-  field('ripples', 3, () => {
-    part('ring', { pivot: at }, () => {
-      ellipse({ cx: at[0], cy: at[1], rx: 30, ry: 9, fill: 'none', stroke: RIPPLE, width: 3 });
-    });
-  });
+  wavelets('wavelets', at, WAVELETS.length);
+  wavelets('landing', [LANDING_X, WATERLINE], LANDING_WAVELETS.length);
   field('drops', DROPS.length, () => {
     part('drop', { pivot: at }, () => circle({ cx: at[0], cy: at[1] - 4, r: 3.5, fill: RIPPLE }));
+  });
+}
+
+function wavelets(name: string, at: Vec2, n: number): void {
+  field(name, n, () => {
+    part('wave', { pivot: at }, () => {
+      line({ from: [at[0] - 10, at[1] + 1], to: [at[0] + 10, at[1] + 1], stroke: RIPPLE, width: 4, cap: 'round' });
+    });
   });
 }
 
@@ -378,17 +394,33 @@ heronFishing.part('squash').animate({
 
 // --- the water answers -------------------------------------------------------
 
-for (let i = 0; i < 3; i++) {
-  const b = stagger(RIPPLES, i, 3, { spread: 0.35 });
-  // The ring shrinks back to its seed only once it is fully transparent.
-  heronFishing.part(`ripples.${i}.ring`).animate({
-    scaleX: within(b, keys([[0, 0.2, easeOut], [0.9, 2.8], [0.94, 0.2], [1, 0.2]])),
-    scaleY: within(b, keys([[0, 0.2, easeOut], [0.9, 2.8], [0.94, 0.2], [1, 0.2]])),
-  });
-  heronFishing.part(`ripples.${i}.ring`).animate({
-    opacity: within(b, keys([[0, 0], [0.05, 0.9, easeIn], [0.9, 0], [1, 0]])),
+/**
+ * A wavelet leaves fast and coasts to a stop, stretching as it slows, and it
+ * is gone within the second. Later ones leave a little later, so the wash
+ * spreads rather than pulses.
+ */
+function wash(prefix: string, b: Beat, travel: number[]): void {
+  travel.forEach((dx, i) => {
+    const w = stagger(b, i, travel.length, { spread: 0.3 });
+    const wave = heronFishing.part(`${prefix}.${i}.wave`);
+    wave.animate({
+      x: within(w, keys([[0, 0, easeOut], [0.85, dx], [0.9, 0], [1, 0]])),
+      scaleX: within(w, keys([[0, 0.5, easeOut], [0.85, 1.9], [0.9, 0.5], [1, 0.5]])),
+    });
+    wave.animate({
+      opacity: within(w, keys([[0, 0], [0.04, 1, easeIn], [0.8, 0], [1, 0]])),
+    });
   });
 }
+
+/** A window given in seconds from a beat's start, free to outlast the beat. */
+function after(beat: string, seconds: number, offset = 0): Beat {
+  const from = beats.time(beat) + offset / DURATION;
+  return { name: `${beat}+${seconds}s`, from, to: from + seconds / DURATION, seconds };
+}
+
+wash('wavelets', after('plunge', 1.2), WAVELETS);
+wash('landing', after('recoil', 0.9, beats.at('recoil').seconds), LANDING_WAVELETS);
 
 DROPS.forEach(([dx, dy], i) => {
   const b = stagger(beats.span('plunge', 'recoil'), i, DROPS.length, { spread: 0.25 });

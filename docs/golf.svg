@@ -1,0 +1,339 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="720" height="405" role="img" aria-label="golf">
+  <title>golf</title>
+  <defs>
+    <ellipse id="h-auto-0" cx="0" cy="0" rx="15" ry="6" fill="#f6f6f6"/>
+  </defs>
+  <style>
+  .h-clouds, .h-ball, .h-ball-arc, .h-ball-arc-spin, .h-shadow, .h-shadow-l1, .h-shadow-l2, .h-flag, .h-golfer, .h-golfer-backFoot, .h-golfer-torso, .h-golfer-torso-l1, .h-golfer-torso-head, .h-golfer-torso-arms, .h-golfer-torso-arms-club, .h-fade { transform-box: view-box; }
+  .h-clouds {  animation: kf-clouds 8.6s linear infinite; }
+  .h-ball { transform-origin: 246px 416px; animation: kf-ball 8.6s linear infinite; }
+  .h-ball-arc { transform-origin: 246px 416px; animation: kf-ball-arc 8.6s linear infinite; }
+  .h-ball-arc-spin { transform-origin: 246px 416px; animation: kf-ball-arc-spin 8.6s linear infinite; }
+  .h-shadow { transform-origin: 246px 430px; animation: kf-ball 8.6s linear infinite; }
+  .h-shadow-l1 { transform-origin: 246px 430px; animation: kf-shadow-l1 8.6s linear infinite; }
+  .h-shadow-l2 { transform-origin: 246px 430px; animation: kf-shadow-l2-o 8.6s linear infinite; }
+  .h-flag { transform-origin: 758px 280px; animation: kf-flag 8.6s linear infinite; }
+  .h-golfer { transform-origin: 170px 430px; animation: kf-golfer 8.6s linear infinite; }
+  .h-golfer-backFoot { transform-origin: 160px 430px; animation: kf-golfer-backFoot 8.6s linear infinite; }
+  .h-golfer-torso { transform-origin: 170px 334px; animation: kf-golfer-torso 8.6s linear infinite; }
+  .h-golfer-torso-l1 { transform-origin: 170px 334px; animation: kf-golfer-torso-l1 8.6s linear infinite; }
+  .h-golfer-torso-head { transform-origin: 190px 258px; animation: kf-golfer-torso-head 8.6s linear infinite; }
+  .h-golfer-torso-arms { transform-origin: 186px 268px; animation: kf-golfer-torso-arms 8.6s linear infinite; }
+  .h-golfer-torso-arms-club { transform-origin: 216px 352px; animation: kf-golfer-torso-arms-club 8.6s linear infinite; }
+  .h-fade {  animation: kf-fade-o 8.6s linear infinite; }
+  @keyframes kf-clouds {
+    0% { transform: translate(0px, 0px); animation-timing-function: ease-in-out; }
+    50% { transform: translate(22px, 0px); animation-timing-function: ease-in-out; }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-ball {
+    0% { transform: translate(0px, 0px); }
+    30.2325581395% { transform: translate(0px, 0px); }
+    52.3255813953% { transform: translate(372px, 0px); }
+    56.8023255814% { transform: translate(442px, 0px); }
+    60.4651162791% { transform: translate(480px, 0px); animation-timing-function: ease-out; }
+    73.4651162791% { transform: translate(512px, 0px); }
+    95.3488372093% { transform: translate(512px, 0px); animation-timing-function: steps(1, end); }
+    95.5488372093% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-ball-arc {
+    0% { transform: translate(0px, 0px); }
+    30.2325581395% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    43.5581395349% { transform: translate(0px, -256px); animation-timing-function: ease-in; }
+    52.3255813953% { transform: translate(0px, 0px); }
+    54.523255814% { transform: translate(0px, -52px); animation-timing-function: ease-in; }
+    56.8023255814% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    58.6744186047% { transform: translate(0px, -16px); animation-timing-function: ease-in; }
+    60.4651162791% { transform: translate(0px, 0px); }
+    73.4651162791% { transform: translate(0px, 0px); animation-timing-function: ease-in; }
+    75.5813953488% { transform: translate(0px, 30px); }
+    95.3488372093% { transform: translate(0px, 30px); animation-timing-function: steps(1, end); }
+    95.5488372093% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-ball-arc-spin {
+    0% { transform: rotate(0deg); }
+    30.2325581395% { transform: rotate(0deg); }
+    52.3255813953% { transform: rotate(1800deg); }
+    60.4651162791% { transform: rotate(2160deg); animation-timing-function: ease-out; }
+    73.4651162791% { transform: rotate(2520deg); }
+    95.3488372093% { transform: rotate(2520deg); animation-timing-function: steps(1, end); }
+    95.5488372093% { transform: rotate(0deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-shadow-l1 {
+    0% { transform: scale(1, 1); }
+    30.2325581395% { transform: scale(1, 1); animation-timing-function: ease-out; }
+    43.5581395349% { transform: scale(0.35, 0.35); animation-timing-function: ease-in; }
+    52.3255813953% { transform: scale(1, 1); }
+    54.523255814% { transform: scale(0.8, 0.8); animation-timing-function: ease-in; }
+    56.8023255814% { transform: scale(1, 1); }
+    58.6744186047% { transform: scale(0.92, 0.92); }
+    60.4651162791% { transform: scale(1, 1); }
+    100% { transform: scale(1, 1); }
+  }
+  @keyframes kf-shadow-l2-o {
+    0% { opacity: 1; }
+    72.5581395349% { opacity: 1; animation-timing-function: ease-in; }
+    74.0697674419% { opacity: 0; }
+    95.3488372093% { opacity: 0; animation-timing-function: steps(1, end); }
+    95.5488372093% { opacity: 1; }
+    100% { opacity: 1; }
+  }
+  @keyframes kf-flag {
+    0% { transform: rotate(-0.719deg) skewY(-3.074deg); }
+    2.86% { transform: rotate(-0.555deg) skewY(-2.099deg); }
+    7.55% { transform: rotate(-0.732deg) skewY(-2.461deg); }
+    9.64% { transform: rotate(-0.543deg) skewY(-1.898deg); }
+    11.72% { transform: rotate(-0.301deg) skewY(-0.106deg); }
+    16.28% { transform: rotate(-0.369deg) skewY(5.743deg); }
+    18.49% { transform: rotate(-0.394deg) skewY(6.906deg); }
+    19.79% { transform: rotate(-0.223deg) skewY(6.516deg); }
+    21.22% { transform: rotate(0.145deg) skewY(5.189deg); }
+    26.82% { transform: rotate(1.708deg) skewY(-3.023deg); }
+    29.3% { transform: rotate(1.62deg) skewY(-4.424deg); }
+    30.99% { transform: rotate(1.391deg) skewY(-4.19deg); }
+    35.81% { transform: rotate(0.876deg) skewY(-2.158deg); }
+    40.89% { transform: rotate(-0.45deg) skewY(-2.461deg); }
+    42.84% { transform: rotate(-1.079deg) skewY(-1.968deg); }
+    45.05% { transform: rotate(-1.404deg) skewY(-0.106deg); }
+    49.61% { transform: rotate(-0.781deg) skewY(5.743deg); }
+    51.82% { transform: rotate(-0.553deg) skewY(6.906deg); }
+    52.99% { transform: rotate(-0.56deg) skewY(6.592deg); }
+    54.17% { transform: rotate(-0.626deg) skewY(5.634deg); }
+    59.64% { transform: rotate(-0.543deg) skewY(-2.443deg); }
+    61.07% { transform: rotate(-0.368deg) skewY(-3.807deg); }
+    62.37% { transform: rotate(-0.253deg) skewY(-4.383deg); }
+    64.19% { transform: rotate(-0.237deg) skewY(-4.234deg); }
+    69.27% { transform: rotate(-0.311deg) skewY(-2.135deg); }
+    74.22% { transform: rotate(1.182deg) skewY(-2.461deg); }
+    76.04% { transform: rotate(1.619deg) skewY(-2.033deg); }
+    78.26% { transform: rotate(1.714deg) skewY(-0.253deg); }
+    82.94% { transform: rotate(1.15deg) skewY(5.743deg); }
+    85.16% { transform: rotate(0.946deg) skewY(6.906deg); }
+    86.46% { transform: rotate(0.788deg) skewY(6.516deg); }
+    87.76% { transform: rotate(0.54deg) skewY(5.344deg); }
+    92.32% { transform: rotate(-0.933deg) skewY(-1.597deg); }
+    94.4% { transform: rotate(-1.365deg) skewY(-3.807deg); }
+    96.74% { transform: rotate(-1.298deg) skewY(-4.414deg); }
+    100% { transform: rotate(-0.719deg) skewY(-3.074deg); }
+  }
+  @keyframes kf-golfer {
+    0% { transform: translate(0px, 0px); }
+    77.0930232558% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    79.3604651163% { transform: translate(0px, -48px); animation-timing-function: ease-in; }
+    81.6279069767% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    83.8953488372% { transform: translate(0px, -48px); animation-timing-function: ease-in; }
+    86.1627906977% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-golfer-backFoot {
+    0% { transform: rotate(0deg); }
+    29.0697674419% { transform: rotate(0deg); animation-timing-function: ease-out; }
+    34.4186046512% { transform: rotate(-40deg); }
+    46.2790697674% { transform: rotate(-40deg); animation-timing-function: ease-in-out; }
+    60.4651162791% { transform: rotate(0deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-golfer-torso {
+    0% { transform: rotate(0deg); }
+    15.1162790698% { transform: rotate(0deg); animation-timing-function: ease-in-out; }
+    24.4186046512% { transform: rotate(-12deg); }
+    27.9069767442% { transform: rotate(-12deg); animation-timing-function: ease-in; }
+    30.2325581395% { transform: rotate(2deg); animation-timing-function: ease-out; }
+    33.7209302326% { transform: rotate(18deg); animation-timing-function: ease-in-out; }
+    37.2093023256% { transform: rotate(16deg); }
+    46.2790697674% { transform: rotate(16deg); animation-timing-function: ease-in-out; }
+    60.4651162791% { transform: rotate(4deg); }
+    75.5813953488% { transform: rotate(4deg); animation-timing-function: ease-out; }
+    77.8488372093% { transform: rotate(-10deg); animation-timing-function: ease-in-out; }
+    90.6976744186% { transform: rotate(-6deg); }
+    95.3488372093% { transform: rotate(-6deg); animation-timing-function: steps(1, end); }
+    95.5488372093% { transform: rotate(0deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-golfer-torso-l1 {
+    0% { transform: translate(0px, 0px); }
+    15.1162790698% { transform: translate(0px, 0px); animation-timing-function: ease-in-out; }
+    24.4186046512% { transform: translate(-8px, 0px); }
+    27.9069767442% { transform: translate(-8px, 0px); animation-timing-function: ease-in; }
+    30.2325581395% { transform: translate(4px, 0px); animation-timing-function: ease-out; }
+    37.2093023256% { transform: translate(12px, 0px); }
+    46.2790697674% { transform: translate(12px, 0px); animation-timing-function: ease-in-out; }
+    60.4651162791% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-golfer-torso-head {
+    0% { transform: rotate(0deg); }
+    15.1162790698% { transform: rotate(0deg); animation-timing-function: ease-in-out; }
+    24.4186046512% { transform: rotate(6deg); }
+    27.9069767442% { transform: rotate(6deg); animation-timing-function: ease-in; }
+    30.2325581395% { transform: rotate(0deg); }
+    32.3255813953% { transform: rotate(0deg); animation-timing-function: ease-out; }
+    37.2093023256% { transform: rotate(-34deg); }
+    44.7674418605% { transform: rotate(-34deg); animation-timing-function: ease-in-out; }
+    56.3953488372% { transform: rotate(-14deg); animation-timing-function: ease-in-out; }
+    72.5581395349% { transform: rotate(-8deg); }
+    75.5813953488% { transform: rotate(-8deg); animation-timing-function: ease-out; }
+    77.8488372093% { transform: rotate(-36deg); animation-timing-function: ease-in-out; }
+    90.6976744186% { transform: rotate(-30deg); }
+    95.3488372093% { transform: rotate(-30deg); animation-timing-function: steps(1, end); }
+    95.5488372093% { transform: rotate(0deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-golfer-torso-arms {
+    0% { transform: rotate(0deg); }
+    3.023255814% { transform: rotate(0deg); animation-timing-function: ease-in-out; }
+    5.2906976744% { transform: rotate(6deg); animation-timing-function: ease-in-out; }
+    7.5581395349% { transform: rotate(0deg); animation-timing-function: ease-in-out; }
+    9.3720930233% { transform: rotate(5deg); animation-timing-function: ease-in-out; }
+    11.3372093023% { transform: rotate(0deg); }
+    15.1162790698% { transform: rotate(0deg); animation-timing-function: ease-in-out; }
+    24.4186046512% { transform: rotate(184deg); }
+    26.511627907% { transform: rotate(192deg); animation-timing-function: ease-in-out; }
+    27.9069767442% { transform: rotate(188deg); animation-timing-function: ease-in; }
+    30.2325581395% { transform: rotate(0deg); }
+    33.3720930233% { transform: rotate(-140deg); animation-timing-function: ease-out; }
+    37.2093023256% { transform: rotate(-152deg); }
+    46.2790697674% { transform: rotate(-152deg); animation-timing-function: ease-in-out; }
+    55.5813953488% { transform: rotate(-10deg); animation-timing-function: ease-in-out; }
+    60.4651162791% { transform: rotate(0deg); }
+    75.5813953488% { transform: rotate(0deg); animation-timing-function: ease-out; }
+    77.3953488372% { transform: rotate(-165deg); animation-timing-function: ease-in-out; }
+    80.1162790698% { transform: rotate(-140deg); animation-timing-function: ease-in-out; }
+    83.1395348837% { transform: rotate(-165deg); animation-timing-function: ease-in-out; }
+    86.1627906977% { transform: rotate(-142deg); animation-timing-function: ease-in-out; }
+    90.6976744186% { transform: rotate(-150deg); }
+    95.3488372093% { transform: rotate(-150deg); animation-timing-function: steps(1, end); }
+    95.5488372093% { transform: rotate(0deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-golfer-torso-arms-club {
+    0% { transform: rotate(0deg); }
+    3.023255814% { transform: rotate(0deg); animation-timing-function: ease-in-out; }
+    5.2906976744% { transform: rotate(10deg); animation-timing-function: ease-in-out; }
+    7.5581395349% { transform: rotate(-3deg); animation-timing-function: ease-in-out; }
+    9.3720930233% { transform: rotate(8deg); animation-timing-function: ease-in-out; }
+    11.3372093023% { transform: rotate(0deg); }
+    15.1162790698% { transform: rotate(0deg); animation-timing-function: ease-in; }
+    19.3023255814% { transform: rotate(8deg); animation-timing-function: ease-out; }
+    24.4186046512% { transform: rotate(96deg); }
+    26.511627907% { transform: rotate(106deg); animation-timing-function: ease-in-out; }
+    27.9069767442% { transform: rotate(102deg); }
+    29.3023255814% { transform: rotate(96deg); animation-timing-function: ease-in; }
+    30.2325581395% { transform: rotate(0deg); animation-timing-function: ease-out; }
+    33.023255814% { transform: rotate(-60deg); animation-timing-function: ease-in-out; }
+    37.2093023256% { transform: rotate(-92deg); }
+    46.2790697674% { transform: rotate(-92deg); animation-timing-function: ease-in-out; }
+    55.5813953488% { transform: rotate(6deg); animation-timing-function: ease-in-out; }
+    60.4651162791% { transform: rotate(0deg); }
+    75.5813953488% { transform: rotate(0deg); animation-timing-function: ease-out; }
+    77.3953488372% { transform: rotate(8deg); animation-timing-function: ease-in-out; }
+    80.1162790698% { transform: rotate(-2deg); animation-timing-function: ease-in-out; }
+    83.1395348837% { transform: rotate(8deg); animation-timing-function: ease-in-out; }
+    86.1627906977% { transform: rotate(-2deg); animation-timing-function: ease-in-out; }
+    90.6976744186% { transform: rotate(4deg); }
+    95.3488372093% { transform: rotate(4deg); animation-timing-function: steps(1, end); }
+    95.5488372093% { transform: rotate(0deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-fade-o {
+    0% { opacity: 0; }
+    90.6976744186% { opacity: 0; animation-timing-function: ease-in; }
+    94.4186046512% { opacity: 1; }
+    96.2790697674% { opacity: 1; animation-timing-function: ease-out; }
+    100% { opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .h-clouds, .h-ball, .h-ball-arc, .h-ball-arc-spin, .h-shadow, .h-shadow-l1, .h-shadow-l2, .h-flag, .h-golfer, .h-golfer-backFoot, .h-golfer-torso, .h-golfer-torso-l1, .h-golfer-torso-head, .h-golfer-torso-arms, .h-golfer-torso-arms-club, .h-fade { animation: none; }
+  }
+  </style>
+  <g>
+    <rect x="0" y="0" width="960" height="540" fill="#bfe3f7"/>
+    <circle cx="840" cy="86" r="40" fill="#ffe27a"/>
+      <g class="h-clouds">
+        <ellipse cx="140" cy="96" rx="48" ry="17" fill="#ffffff"/>
+        <circle cx="126" cy="84" r="19" fill="#ffffff"/>
+        <circle cx="154" cy="87" r="14" fill="#ffffff"/>
+        <ellipse cx="430" cy="62" rx="38.4" ry="13.6" fill="#ffffff"/>
+        <circle cx="418.8" cy="52.4" r="15.2" fill="#ffffff"/>
+        <circle cx="441.2" cy="54.8" r="11.2" fill="#ffffff"/>
+        <ellipse cx="660" cy="118" rx="55.2" ry="19.55" fill="#ffffff"/>
+        <circle cx="643.9" cy="104.2" r="21.85" fill="#ffffff"/>
+        <circle cx="676.1" cy="107.65" r="16.1" fill="#ffffff"/>
+      </g>
+    <ellipse cx="300" cy="430" rx="300" ry="100" fill="#a9d9a0"/>
+    <ellipse cx="700" cy="430" rx="260" ry="80" fill="#7fc36e"/>
+    <rect x="553" y="320" width="14" height="112" fill="#6a4a2f"/>
+    <circle cx="560" cy="300" r="44" fill="#3f8a45"/>
+    <circle cx="526" cy="324" r="30" fill="#3f8a45"/>
+    <circle cx="594" cy="322" r="32" fill="#3f8a45"/>
+    <rect x="900.1" y="353" width="9.8" height="78.4" fill="#6a4a2f"/>
+    <circle cx="905" cy="339" r="30.8" fill="#3f8a45"/>
+    <circle cx="881.2" cy="355.8" r="21" fill="#3f8a45"/>
+    <circle cx="928.8" cy="354.4" r="22.4" fill="#3f8a45"/>
+      <g class="h-ball">
+          <g class="h-ball-arc">
+              <g class="h-ball-arc-spin">
+                <circle cx="246" cy="416" r="8" fill="#ffffff"/>
+                <circle cx="249.5" cy="414.5" r="2.2" fill="#c8c8c8"/>
+              </g>
+          </g>
+      </g>
+    <rect x="0" y="430" width="960" height="110" fill="#5fb050"/>
+    <polygon points="0,430 120,430 200,540 40,540" fill="#4f9c42"/>
+    <polygon points="240,430 360,430 440,540 280,540" fill="#4f9c42"/>
+    <polygon points="480,430 600,430 680,540 520,540" fill="#4f9c42"/>
+    <polygon points="720,430 840,430 920,540 760,540" fill="#4f9c42"/>
+    <rect x="244" y="420" width="4" height="12" fill="#e8d8b0"/>
+      <g class="h-shadow">
+        <g class="h-shadow-l1">
+          <g class="h-shadow-l2">
+            <ellipse cx="246" cy="432" rx="10" ry="3.5" fill="#000000" opacity="0.25"/>
+          </g>
+        </g>
+      </g>
+    <ellipse cx="758" cy="431" rx="15" ry="5" fill="#2b2b2b"/>
+    <line x1="758" y1="280" x2="758" y2="431" stroke="#eeeeee" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <g class="h-flag">
+        <polygon points="760,280 804,294 760,308" fill="#e0402a"/>
+      </g>
+      <g class="h-golfer">
+        <line x1="166" y1="334" x2="148" y2="424" stroke="#2c3e50" fill="none" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+          <g class="h-golfer-backFoot">
+            <use href="#h-auto-0" x="148" y="426"/>
+          </g>
+        <line x1="174" y1="334" x2="188" y2="424" stroke="#2c3e50" fill="none" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+        <use href="#h-auto-0" x="190" y="426"/>
+          <g class="h-golfer-torso">
+            <g class="h-golfer-torso-l1">
+              <ellipse cx="170" cy="332" rx="24" ry="14" fill="#2c3e50"/>
+              <polygon points="150,330 190,330 204,264 166,258" fill="#e94f37"/>
+              <polygon points="190,330 204,264 196,298" fill="#c73f2a"/>
+                <g class="h-golfer-torso-head">
+                  <line x1="190" y1="258" x2="196" y2="246" stroke="#f1c9a5" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+                  <circle cx="196" cy="238" r="21" fill="#f1c9a5"/>
+                  <circle cx="209" cy="240" r="2.6" fill="#111111"/>
+                  <path d="M 174 234 A 22 22 0 0 1 218 234 Z" fill="#f6f6f6"/>
+                  <polygon points="208,232 240,240 208,238" fill="#f6f6f6"/>
+                  <ellipse cx="182" cy="242" rx="4" ry="5" fill="#f1c9a5"/>
+                </g>
+                <g class="h-golfer-torso-arms">
+                  <line x1="182" y1="270" x2="216" y2="352" stroke="#f1c9a5" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+                  <line x1="192" y1="266" x2="220" y2="346" stroke="#f1c9a5" fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+                  <circle cx="188" cy="272" r="13" fill="#c73f2a"/>
+                    <g class="h-golfer-torso-arms-club">
+                      <line x1="216" y1="352" x2="238" y2="424" stroke="#555555" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                      <polygon points="230,416 244,418 248,428 228,428" fill="#3a3a3a"/>
+                      <circle cx="218" cy="350" r="9" fill="#f1c9a5"/>
+                    </g>
+                </g>
+            </g>
+          </g>
+      </g>
+      <g class="h-fade">
+        <rect x="0" y="0" width="960" height="540" fill="#111111"/>
+      </g>
+  </g>
+</svg>

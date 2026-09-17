@@ -9,7 +9,7 @@ Built so that an agent can write it, look at it, and fix it.
 
 </div>
 
-That pond is not a GIF or a video. It is one 44 kB SVG file with CSS keyframes
+That pond is not a GIF or a video. It is one 53 kB SVG file with CSS keyframes
 inside it, generated from [`examples/heron-fishing.ts`](examples/heron-fishing.ts).
 No JavaScript, no runtime, no external references — it works in an `<img>` tag,
 in this README, and offline in ten years.
@@ -18,9 +18,9 @@ Everything in it is one six-second loop: reeds swaying on staggered phases, two
 cloud layers in parallax, a dragonfly hovering on periodic noise, the bird
 breathing on its own noise layer. Its eye finds the fish first, the head cocks,
 and then `reach()` drives a two-bone neck strike to a point on the water. The
-fish flips out with squash-and-stretch, lands with a splash, three ripple rings
-spread from a staggered field, and the neck rings back up on an additive
-`spring()` layer. Every authored key compiles exactly; only the procedural
+fish flips out with squash-and-stretch, lands with a splash, a staggered field
+of wavelets runs away along the surface, and the neck rings back up on an
+additive `spring()` layer. Every authored key compiles exactly; only the procedural
 noise, IK and spring layers are baked, and the compiler certifies those against
 a stated error budget.
 
@@ -108,25 +108,25 @@ artwork that read as a bear cub until it looked at a render.
 
 ## A short
 
-The same primitives make a cartoon. *Fore!* is a fourteen-second cutout short
-in the paper-and-scissors style: flat fills, no outlines, characters that slide
-instead of walking and bob when they talk, mouths that flap with `swap()`, and
-hard cuts between a wide shot and a close-up insert.
+The same primitives make a cartoon. *One hole* is an eight-second cutout short
+in the paper-and-scissors style: flat fills, no outlines, and a golfer who is a
+handful of hinged plates seen from the side.
 
-<img src="docs/fore.svg" width="620" alt="Fore! A cutout crane tees off, the ball bonks a gopher, and the gopher steals the ball.">
+<img src="docs/golf.svg" width="620" alt="One hole: a cutout golfer addresses the ball, swings, and watches it fly, bounce, roll in, then cheers.">
 
-A crane waggles its club at the tee while a gopher pops up by the flag. Backswing,
-a hold at the top, the whoosh; the ball arcs across the fairway and lands on the
-gopher's head. X eyes, orbiting stars, and it drops back down the hole. The crane
-cheers and slides over to collect. Cut to a close-up: the gopher pops out of a
-*different* hole, ball in paw, tongue out. Cut back: the crane skids to a stop,
-pauses, tilts its head, "?!", and both slide off screen right. Iris out, FIN.
+Two waggles at address. The hands go back low, the shaft points at the target at
+the top, and the change of direction is a hold, not a bounce. The wrist stays
+cocked while the arms start down — the lag — and releases at the ball. The head
+stays down until the follow-through and then comes up to watch, which is what
+tells you where to look. The ball flies, bounces twice, rolls, and drops into
+the cup, which is nothing but the ball being drawn behind the ground plane.
+Club in the air, two hops, fade, and again.
 
-It is built from [`examples/fore.ts`](examples/fore.ts) as a `score()` of
+It is built from [`examples/golf.ts`](examples/golf.ts) as a `score()` of
 named beats, and the storyboard below is what `heron sheet --cues` prints from
 that score — one labelled frame per beat, which is how the timing was judged:
 
-<img src="docs/fore-sheet.png" width="620" alt="Storyboard: one frame per beat of the Fore! short">
+<img src="docs/golf-sheet.png" width="620" alt="Storyboard: one frame per beat of the golf short">
 
 ## Writing a character
 
