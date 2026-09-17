@@ -1,0 +1,850 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="600" height="375" role="img" aria-label="heronFishing">
+  <title>heronFishing</title>
+  <defs>
+    <ellipse id="h-auto-0" cx="0" cy="0" rx="28.8" ry="6.6" fill="#fbead2"/>
+    <ellipse id="h-auto-1" cx="0" cy="0" rx="14.4" ry="8.4" fill="#fbead2"/>
+    <ellipse id="h-auto-2" cx="0" cy="0" rx="48" ry="11" fill="#fbead2"/>
+    <ellipse id="h-auto-3" cx="0" cy="0" rx="24" ry="14" fill="#fbead2"/>
+    <ellipse id="h-auto-4" cx="0" cy="0" rx="17" ry="5" fill="#fbead2" opacity="0.9"/>
+    <ellipse id="h-auto-5" cx="0" cy="0" rx="30" ry="9" fill="none" stroke="#a7d5dc" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle id="h-auto-6" cx="0" cy="0" r="3.5" fill="#a7d5dc"/>
+    <ellipse id="h-auto-7" cx="0" cy="0" rx="5" ry="18" fill="#22362f"/>
+  </defs>
+  <style>
+  .h-cloudsFar, .h-cloudsNear, .h-dragonfly, .h-dragonfly-wings, .h-fish, .h-fish-lift, .h-fish-lift-spin, .h-fish-lift-spin-squash, .h-ripples-0-ring, .h-ripples-0-ring-l1, .h-ripples-1-ring, .h-ripples-1-ring-l1, .h-ripples-2-ring, .h-ripples-2-ring-l1, .h-drops-0-drop, .h-drops-0-drop-l1, .h-drops-0-drop-l2, .h-drops-1-drop, .h-drops-1-drop-l1, .h-drops-1-drop-l2, .h-drops-2-drop, .h-drops-2-drop-l1, .h-drops-2-drop-l2, .h-drops-3-drop, .h-drops-3-drop-l1, .h-drops-3-drop-l2, .h-drops-4-drop, .h-drops-4-drop-l1, .h-drops-4-drop-l2, .h-heron, .h-heron-body, .h-heron-body-neckUpper, .h-heron-body-neckUpper-l1, .h-heron-body-neckUpper-neckLower, .h-heron-body-neckUpper-neckLower-head, .h-heron-body-neckUpper-neckLower-head-pupil, .h-heron-body-neckUpper-neckLower-head-pupil-l1, .h-heron-body-neckUpper-neckLower-head-lid, .h-reeds-0-stalk, .h-reeds-1-stalk, .h-reeds-2-stalk, .h-reeds-3-stalk, .h-reeds-4-stalk, .h-reeds-5-stalk, .h-reeds-6-stalk { transform-box: view-box; }
+  .h-cloudsFar {  animation: kf-cloudsFar 6s linear infinite; }
+  .h-cloudsNear {  animation: kf-cloudsNear 6s linear infinite; }
+  .h-dragonfly { transform-origin: 480px 196px; animation: kf-dragonfly 6s linear infinite; }
+  .h-dragonfly-wings { transform-origin: 480px 196px; animation: kf-dragonfly-wings 6s linear infinite; }
+  .h-fish { transform-origin: 176px 342px; animation: kf-fish 6s linear infinite; }
+  .h-fish-lift { transform-origin: 176px 342px; animation: kf-fish-lift 6s linear infinite; }
+  .h-fish-lift-spin { transform-origin: 176px 342px; animation: kf-fish-lift-spin 6s linear infinite; }
+  .h-fish-lift-spin-squash { transform-origin: 176px 342px; animation: kf-fish-lift-spin-squash 6s linear infinite; }
+  .h-ripples-0-ring { transform-origin: 172px 320px; animation: kf-ripples-0-ring 6s linear infinite; }
+  .h-ripples-0-ring-l1 { transform-origin: 172px 320px; animation: kf-ripples-0-ring-l1-o 6s linear infinite; }
+  .h-ripples-1-ring { transform-origin: 172px 320px; animation: kf-ripples-1-ring 6s linear infinite; }
+  .h-ripples-1-ring-l1 { transform-origin: 172px 320px; animation: kf-ripples-1-ring-l1-o 6s linear infinite; }
+  .h-ripples-2-ring { transform-origin: 172px 320px; animation: kf-ripples-2-ring 6s linear infinite; }
+  .h-ripples-2-ring-l1 { transform-origin: 172px 320px; animation: kf-ripples-2-ring-l1-o 6s linear infinite; }
+  .h-drops-0-drop { transform-origin: 172px 320px; animation: kf-drops-0-drop 6s linear infinite; }
+  .h-drops-0-drop-l1 { transform-origin: 172px 320px; animation: kf-drops-0-drop-l1 6s linear infinite; }
+  .h-drops-0-drop-l2 { transform-origin: 172px 320px; animation: kf-drops-0-drop-l2-o 6s linear infinite; }
+  .h-drops-1-drop { transform-origin: 172px 320px; animation: kf-drops-1-drop 6s linear infinite; }
+  .h-drops-1-drop-l1 { transform-origin: 172px 320px; animation: kf-drops-1-drop-l1 6s linear infinite; }
+  .h-drops-1-drop-l2 { transform-origin: 172px 320px; animation: kf-drops-1-drop-l2-o 6s linear infinite; }
+  .h-drops-2-drop { transform-origin: 172px 320px; animation: kf-drops-2-drop 6s linear infinite; }
+  .h-drops-2-drop-l1 { transform-origin: 172px 320px; animation: kf-drops-2-drop-l1 6s linear infinite; }
+  .h-drops-2-drop-l2 { transform-origin: 172px 320px; animation: kf-drops-2-drop-l2-o 6s linear infinite; }
+  .h-drops-3-drop { transform-origin: 172px 320px; animation: kf-drops-3-drop 6s linear infinite; }
+  .h-drops-3-drop-l1 { transform-origin: 172px 320px; animation: kf-drops-3-drop-l1 6s linear infinite; }
+  .h-drops-3-drop-l2 { transform-origin: 172px 320px; animation: kf-drops-3-drop-l2-o 6s linear infinite; }
+  .h-drops-4-drop { transform-origin: 172px 320px; animation: kf-drops-4-drop 6s linear infinite; }
+  .h-drops-4-drop-l1 { transform-origin: 172px 320px; animation: kf-drops-4-drop-l1 6s linear infinite; }
+  .h-drops-4-drop-l2 { transform-origin: 172px 320px; animation: kf-drops-4-drop-l2-o 6s linear infinite; }
+  .h-heron { transform-origin: 262px 228px; animation: kf-heron 6s linear infinite; }
+  .h-heron-body { transform-origin: 262px 228px; animation: kf-heron-body 6s linear infinite; }
+  .h-heron-body-neckUpper { transform-origin: 262px 228px; animation: kf-heron-body-neckUpper 6s linear infinite; }
+  .h-heron-body-neckUpper-l1 { transform-origin: 262px 228px; animation: kf-heron-body-neckUpper-l1 6s linear infinite; }
+  .h-heron-body-neckUpper-neckLower { transform-origin: 238px 152px; animation: kf-heron-body-neckUpper-neckLower 6s linear infinite; }
+  .h-heron-body-neckUpper-neckLower-head { transform-origin: 216.319px 83.342px; animation: kf-heron-body-neckUpper-neckLower-head 6s linear infinite; }
+  .h-heron-body-neckUpper-neckLower-head-pupil { transform-origin: 208.319px 80.342px; animation: kf-heron-body-neckUpper-neckLower-head-pupil 6s linear infinite; }
+  .h-heron-body-neckUpper-neckLower-head-pupil-l1 { transform-origin: 208.319px 80.342px; animation: kf-heron-body-neckUpper-neckLower-head-pupil-l1 6s linear infinite; }
+  .h-heron-body-neckUpper-neckLower-head-lid { transform-origin: 208.319px 75.342px; animation: kf-heron-body-neckUpper-neckLower-head-lid 6s linear infinite; }
+  .h-reeds-0-stalk { transform-origin: 575px 328px; animation: kf-reeds-0-stalk 6s linear infinite; }
+  .h-reeds-1-stalk { transform-origin: 612px 328px; animation: kf-reeds-0-stalk 6s linear -2.22s infinite; }
+  .h-reeds-2-stalk { transform-origin: 640px 328px; animation: kf-reeds-0-stalk 6s linear -4.44s infinite; }
+  .h-reeds-3-stalk { transform-origin: 672px 328px; animation: kf-reeds-0-stalk 6s linear -0.66s infinite; }
+  .h-reeds-4-stalk { transform-origin: 703px 328px; animation: kf-reeds-0-stalk 6s linear -2.88s infinite; }
+  .h-reeds-5-stalk { transform-origin: 736px 328px; animation: kf-reeds-0-stalk 6s linear -5.1s infinite; }
+  .h-reeds-6-stalk { transform-origin: 768px 328px; animation: kf-reeds-0-stalk 6s linear -1.32s infinite; }
+  @keyframes kf-cloudsFar {
+    0% { transform: translate(0px, 0px); animation-timing-function: ease-in-out; }
+    50% { transform: translate(-9px, 0px); animation-timing-function: ease-in-out; }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-cloudsNear {
+    0% { transform: translate(0px, 0px); animation-timing-function: ease-in-out; }
+    50% { transform: translate(-20px, 0px); animation-timing-function: ease-in-out; }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-dragonfly {
+    0% { transform: translate(-43.823px, 9.553px); }
+    0.78% { transform: translate(-44.258px, 13.522px); }
+    1.56% { transform: translate(-44.788px, 17.089px); }
+    2.34% { transform: translate(-45.435px, 20.184px); }
+    3.13% { transform: translate(-46.213px, 22.751px); }
+    3.91% { transform: translate(-47.121px, 24.756px); }
+    4.49% { transform: translate(-47.88px, 25.877px); }
+    5.27% { transform: translate(-48.976px, 26.863px); }
+    6.05% { transform: translate(-50.135px, 27.281px); }
+    7.03% { transform: translate(-51.601px, 27.054px); }
+    7.62% { transform: translate(-52.447px, 26.555px); }
+    8.2% { transform: translate(-53.236px, 25.815px); }
+    9.57% { transform: translate(-54.694px, 23.324px); }
+    10.74% { transform: translate(-55.288px, 20.601px); }
+    11.72% { transform: translate(-55.15px, 18.133px); }
+    12.5% { transform: translate(-54.54px, 16.145px); }
+    13.28% { transform: translate(-53.435px, 14.226px); }
+    14.06% { transform: translate(-51.797px, 12.441px); }
+    15.04% { transform: translate(-48.967px, 10.48px); }
+    16.02% { transform: translate(-45.26px, 8.885px); }
+    16.99% { transform: translate(-40.701px, 7.696px); }
+    17.58% { transform: translate(-37.583px, 7.178px); }
+    18.16% { transform: translate(-34.202px, 6.8px); }
+    19.14% { transform: translate(-28.052px, 6.447px); }
+    20.12% { transform: translate(-21.383px, 6.37px); }
+    23.05% { transform: translate(0.009px, 6.672px); }
+    24.61% { transform: translate(10.977px, 6.271px); }
+    25.39% { transform: translate(16.033px, 5.711px); }
+    25.98% { transform: translate(19.573px, 5.094px); }
+    26.76% { transform: translate(23.904px, 3.98px); }
+    27.34% { transform: translate(26.831px, 2.913px); }
+    28.13% { transform: translate(30.272px, 1.174px); }
+    28.71% { transform: translate(32.492px, -0.365px); }
+    29.3% { transform: translate(34.396px, -2.095px); }
+    30.08% { transform: translate(36.444px, -4.678px); }
+    30.66% { transform: translate(37.619px, -6.797px); }
+    31.45% { transform: translate(38.727px, -9.816px); }
+    32.23% { transform: translate(39.345px, -12.992px); }
+    33.01% { transform: translate(39.526px, -16.244px); }
+    34.18% { transform: translate(39.113px, -21.064px); }
+    35.55% { transform: translate(37.879px, -26.213px); }
+    36.52% { transform: translate(36.712px, -29.309px); }
+    37.5% { transform: translate(35.47px, -31.725px); }
+    38.48% { transform: translate(34.283px, -33.313px); }
+    39.45% { transform: translate(33.261px, -33.962px); }
+    40.04% { transform: translate(32.763px, -33.868px); }
+    40.43% { transform: translate(32.488px, -33.598px); }
+    41.21% { transform: translate(32.087px, -32.559px); }
+    41.99% { transform: translate(31.894px, -30.86px); }
+    42.77% { transform: translate(31.906px, -28.531px); }
+    43.55% { transform: translate(32.11px, -25.618px); }
+    44.34% { transform: translate(32.48px, -22.185px); }
+    45.12% { transform: translate(32.979px, -18.31px); }
+    45.9% { transform: translate(33.56px, -14.088px); }
+    47.85% { transform: translate(35.021px, -2.695px); }
+    49.22% { transform: translate(35.677px, 5.268px); }
+    50% { transform: translate(35.785px, 9.553px); }
+    50.78% { transform: translate(35.642px, 13.522px); }
+    51.56% { transform: translate(35.212px, 17.089px); }
+    52.15% { transform: translate(34.687px, 19.458px); }
+    52.73% { transform: translate(33.98px, 21.536px); }
+    53.32% { transform: translate(33.091px, 23.306px); }
+    54.3% { transform: translate(31.212px, 25.54px); }
+    54.88% { transform: translate(29.86px, 26.442px); }
+    55.47% { transform: translate(28.356px, 27.02px); }
+    56.05% { transform: translate(26.717px, 27.281px); }
+    56.64% { transform: translate(24.964px, 27.24px); }
+    57.62% { transform: translate(21.856px, 26.555px); }
+    58.79% { transform: translate(17.981px, 24.864px); }
+    59.57% { transform: translate(15.422px, 23.324px); }
+    60.55% { transform: translate(12.38px, 21.079px); }
+    61.91% { transform: translate(8.663px, 17.634px); }
+    62.89% { transform: translate(6.565px, 15.173px); }
+    63.67% { transform: translate(5.299px, 13.313px); }
+    64.65% { transform: translate(4.289px, 11.224px); }
+    65.43% { transform: translate(3.965px, 9.795px); }
+    66.21% { transform: translate(4.076px, 8.615px); }
+    66.99% { transform: translate(4.609px, 7.696px); }
+    67.77% { transform: translate(5.536px, 7.037px); }
+    68.55% { transform: translate(6.815px, 6.62px); }
+    69.92% { transform: translate(9.726px, 6.368px); }
+    73.44% { transform: translate(18.499px, 6.644px); }
+    74.41% { transform: translate(20.489px, 6.368px); }
+    75.2% { transform: translate(21.728px, 5.878px); }
+    76.17% { transform: translate(22.725px, 4.848px); }
+    77.15% { transform: translate(23.005px, 3.291px); }
+    78.13% { transform: translate(22.492px, 1.174px); }
+    78.91% { transform: translate(21.485px, -0.921px); }
+    79.69% { transform: translate(19.944px, -3.35px); }
+    80.47% { transform: translate(17.883px, -6.075px); }
+    81.25% { transform: translate(15.334px, -9.044px); }
+    82.03% { transform: translate(12.341px, -12.188px); }
+    82.81% { transform: translate(8.962px, -15.429px); }
+    83.79% { transform: translate(4.297px, -19.481px); }
+    85.16% { transform: translate(-2.782px, -24.822px); }
+    86.33% { transform: translate(-9.058px, -28.739px); }
+    87.3% { transform: translate(-14.222px, -31.304px); }
+    88.28% { transform: translate(-19.168px, -33.068px); }
+    89.26% { transform: translate(-23.767px, -33.912px); }
+    90.04% { transform: translate(-27.126px, -33.868px); }
+    90.43% { transform: translate(-28.685px, -33.598px); }
+    91.02% { transform: translate(-30.861px, -32.881px); }
+    91.41% { transform: translate(-32.2px, -32.195px); }
+    91.99% { transform: translate(-34.038px, -30.86px); }
+    92.97% { transform: translate(-36.646px, -27.856px); }
+    93.95% { transform: translate(-38.706px, -23.962px); }
+    95.12% { transform: translate(-40.525px, -18.31px); }
+    96.29% { transform: translate(-41.762px, -11.878px); }
+    97.46% { transform: translate(-42.585px, -5.014px); }
+    98.83% { transform: translate(-43.269px, 3.037px); }
+    100% { transform: translate(-43.823px, 9.553px); }
+  }
+  @keyframes kf-dragonfly-wings {
+    0% { transform: scale(1, 1); }
+    2.0833333333% { transform: scale(1, 0.2); }
+    4.1666666667% { transform: scale(1, 1); }
+    6.25% { transform: scale(1, 0.2); }
+    8.3333333333% { transform: scale(1, 1); }
+    10.4166666667% { transform: scale(1, 0.2); }
+    12.5% { transform: scale(1, 1); }
+    14.5833333333% { transform: scale(1, 0.2); }
+    16.6666666667% { transform: scale(1, 1); }
+    18.75% { transform: scale(1, 0.2); }
+    20.8333333333% { transform: scale(1, 1); }
+    22.9166666667% { transform: scale(1, 0.2); }
+    25% { transform: scale(1, 1); }
+    27.0833333333% { transform: scale(1, 0.2); }
+    29.1666666667% { transform: scale(1, 1); }
+    31.25% { transform: scale(1, 0.2); }
+    33.3333333333% { transform: scale(1, 1); }
+    35.4166666667% { transform: scale(1, 0.2); }
+    37.5% { transform: scale(1, 1); }
+    39.5833333333% { transform: scale(1, 0.2); }
+    41.6666666667% { transform: scale(1, 1); }
+    43.75% { transform: scale(1, 0.2); }
+    45.8333333333% { transform: scale(1, 1); }
+    47.9166666667% { transform: scale(1, 0.2); }
+    50% { transform: scale(1, 1); }
+    52.0833333333% { transform: scale(1, 0.2); }
+    54.1666666667% { transform: scale(1, 1); }
+    56.25% { transform: scale(1, 0.2); }
+    58.3333333333% { transform: scale(1, 1); }
+    60.4166666667% { transform: scale(1, 0.2); }
+    62.5% { transform: scale(1, 1); }
+    64.5833333333% { transform: scale(1, 0.2); }
+    66.6666666667% { transform: scale(1, 1); }
+    68.75% { transform: scale(1, 0.2); }
+    70.8333333333% { transform: scale(1, 1); }
+    72.9166666667% { transform: scale(1, 0.2); }
+    75% { transform: scale(1, 1); }
+    77.0833333333% { transform: scale(1, 0.2); }
+    79.1666666667% { transform: scale(1, 1); }
+    81.25% { transform: scale(1, 0.2); }
+    83.3333333333% { transform: scale(1, 1); }
+    85.4166666667% { transform: scale(1, 0.2); }
+    87.5% { transform: scale(1, 1); }
+    89.5833333333% { transform: scale(1, 0.2); }
+    91.6666666667% { transform: scale(1, 1); }
+    93.75% { transform: scale(1, 0.2); }
+    95.8333333333% { transform: scale(1, 1); }
+    97.9166666667% { transform: scale(1, 0.2); }
+    100% { transform: scale(1, 1); }
+  }
+  @keyframes kf-fish {
+    0% { transform: translate(0px, 0px); }
+    46.6666666667% { transform: translate(0px, 0px); }
+    60% { transform: translate(-96px, 0px); }
+    64.2666666667% { transform: translate(-96px, 0px); animation-timing-function: ease-in-out; }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-fish-lift {
+    0% { transform: translate(0px, 0px); }
+    46.6666666667% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    53.3333333333% { transform: translate(0px, -108px); animation-timing-function: ease-in; }
+    60% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-fish-lift-spin {
+    0% { transform: rotate(40deg); }
+    46.6666666667% { transform: rotate(40deg); animation-timing-function: ease-out; }
+    53.3333333333% { transform: rotate(0deg); animation-timing-function: ease-in; }
+    60% { transform: rotate(-50deg); }
+    64.2666666667% { transform: rotate(-50deg); }
+    65.3333333333% { transform: rotate(40deg); }
+    100% { transform: rotate(40deg); }
+  }
+  @keyframes kf-fish-lift-spin-squash {
+    0% { transform: scale(1.35, 0.72); }
+    46.6666666667% { transform: scale(1.35, 0.72); animation-timing-function: ease-out; }
+    49.0666666667% { transform: scale(1, 1); animation-timing-function: ease-in; }
+    53.3333333333% { transform: scale(1, 1); animation-timing-function: ease-out; }
+    58% { transform: scale(1, 1); }
+    60% { transform: scale(0.7, 1.4); }
+    64.2666666667% { transform: scale(0.7, 1.4); }
+    65.3333333333% { transform: scale(1.35, 0.72); }
+    100% { transform: scale(1.35, 0.72); }
+  }
+  @keyframes kf-ripples-0-ring {
+    0% { transform: scale(0.2, 0.2); }
+    46.6666666667% { transform: scale(0.2, 0.2); animation-timing-function: ease-out; }
+    77.8666666667% { transform: scale(2.8, 2.8); }
+    79.2533333333% { transform: scale(0.2, 0.2); }
+    81.3333333333% { transform: scale(0.2, 0.2); }
+    100% { transform: scale(0.2, 0.2); }
+  }
+  @keyframes kf-ripples-0-ring-l1-o {
+    0% { opacity: 0; }
+    46.6666666667% { opacity: 0; }
+    48.4% { opacity: 0.9; animation-timing-function: ease-in; }
+    77.8666666667% { opacity: 0; }
+    81.3333333333% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes kf-ripples-1-ring {
+    0% { transform: scale(0.2, 0.2); }
+    56% { transform: scale(0.2, 0.2); animation-timing-function: ease-out; }
+    87.2% { transform: scale(2.8, 2.8); }
+    88.5866666667% { transform: scale(0.2, 0.2); }
+    90.6666666667% { transform: scale(0.2, 0.2); }
+    100% { transform: scale(0.2, 0.2); }
+  }
+  @keyframes kf-ripples-1-ring-l1-o {
+    0% { opacity: 0; }
+    56% { opacity: 0; }
+    57.7333333333% { opacity: 0.9; animation-timing-function: ease-in; }
+    87.2% { opacity: 0; }
+    90.6666666667% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes kf-ripples-2-ring {
+    0% { transform: scale(0.2, 0.2); }
+    65.3333333333% { transform: scale(0.2, 0.2); animation-timing-function: ease-out; }
+    96.5333333333% { transform: scale(2.8, 2.8); }
+    97.92% { transform: scale(0.2, 0.2); }
+    100% { transform: scale(0.2, 0.2); }
+  }
+  @keyframes kf-ripples-2-ring-l1-o {
+    0% { opacity: 0; }
+    65.3333333333% { opacity: 0; }
+    67.0666666667% { opacity: 0.9; animation-timing-function: ease-in; }
+    96.5333333333% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes kf-drops-0-drop {
+    0% { transform: translate(0px, 0px); }
+    46.6666666667% { transform: translate(0px, 0px); }
+    55.1666666667% { transform: translate(-34px, 0px); }
+    55.6666666667% { transform: translate(0px, 0px); }
+    56.6666666667% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-0-drop-l1 {
+    0% { transform: translate(0px, 0px); }
+    46.6666666667% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    51.1666666667% { transform: translate(0px, -60px); animation-timing-function: ease-in; }
+    55.1666666667% { transform: translate(0px, 10px); }
+    55.6666666667% { transform: translate(0px, 0px); }
+    56.6666666667% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-0-drop-l2-o {
+    0% { opacity: 0; }
+    46.6666666667% { opacity: 0; }
+    46.9666666667% { opacity: 1; }
+    53.6666666667% { opacity: 1; }
+    55.1666666667% { opacity: 0; }
+    56.6666666667% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes kf-drops-1-drop {
+    0% { transform: translate(0px, 0px); }
+    47.5% { transform: translate(0px, 0px); }
+    56% { transform: translate(-14px, 0px); }
+    56.5% { transform: translate(0px, 0px); }
+    57.5% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-1-drop-l1 {
+    0% { transform: translate(0px, 0px); }
+    47.5% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    52% { transform: translate(0px, -78px); animation-timing-function: ease-in; }
+    56% { transform: translate(0px, 10px); }
+    56.5% { transform: translate(0px, 0px); }
+    57.5% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-1-drop-l2-o {
+    0% { opacity: 0; }
+    47.5% { opacity: 0; }
+    47.8% { opacity: 1; }
+    54.5% { opacity: 1; }
+    56% { opacity: 0; }
+    57.5% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes kf-drops-2-drop {
+    0% { transform: translate(0px, 0px); }
+    48.3333333333% { transform: translate(0px, 0px); }
+    56.8333333333% { transform: translate(10px, 0px); }
+    57.3333333333% { transform: translate(0px, 0px); }
+    58.3333333333% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-2-drop-l1 {
+    0% { transform: translate(0px, 0px); }
+    48.3333333333% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    52.8333333333% { transform: translate(0px, -70px); animation-timing-function: ease-in; }
+    56.8333333333% { transform: translate(0px, 10px); }
+    57.3333333333% { transform: translate(0px, 0px); }
+    58.3333333333% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-2-drop-l2-o {
+    0% { opacity: 0; }
+    48.3333333333% { opacity: 0; }
+    48.6333333333% { opacity: 1; }
+    55.3333333333% { opacity: 1; }
+    56.8333333333% { opacity: 0; }
+    58.3333333333% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes kf-drops-3-drop {
+    0% { transform: translate(0px, 0px); }
+    49.1666666667% { transform: translate(0px, 0px); }
+    57.6666666667% { transform: translate(28px, 0px); }
+    58.1666666667% { transform: translate(0px, 0px); }
+    59.1666666667% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-3-drop-l1 {
+    0% { transform: translate(0px, 0px); }
+    49.1666666667% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    53.6666666667% { transform: translate(0px, -52px); animation-timing-function: ease-in; }
+    57.6666666667% { transform: translate(0px, 10px); }
+    58.1666666667% { transform: translate(0px, 0px); }
+    59.1666666667% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-3-drop-l2-o {
+    0% { opacity: 0; }
+    49.1666666667% { opacity: 0; }
+    49.4666666667% { opacity: 1; }
+    56.1666666667% { opacity: 1; }
+    57.6666666667% { opacity: 0; }
+    59.1666666667% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes kf-drops-4-drop {
+    0% { transform: translate(0px, 0px); }
+    50% { transform: translate(0px, 0px); }
+    58.5% { transform: translate(-50px, 0px); }
+    59% { transform: translate(0px, 0px); }
+    60% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-4-drop-l1 {
+    0% { transform: translate(0px, 0px); }
+    50% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    54.5% { transform: translate(0px, -40px); animation-timing-function: ease-in; }
+    58.5% { transform: translate(0px, 10px); }
+    59% { transform: translate(0px, 0px); }
+    60% { transform: translate(0px, 0px); }
+    100% { transform: translate(0px, 0px); }
+  }
+  @keyframes kf-drops-4-drop-l2-o {
+    0% { opacity: 0; }
+    50% { opacity: 0; }
+    50.3% { opacity: 1; }
+    57% { opacity: 1; }
+    58.5% { opacity: 0; }
+    60% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes kf-heron {
+    0% { transform: translate(0px, -0.988px); }
+    5.86% { transform: translate(0px, -0.265px); }
+    7.55% { transform: translate(0px, 0.289px); }
+    11.59% { transform: translate(0px, 2.036px); }
+    13.93% { transform: translate(0px, 2.406px); }
+    15.76% { transform: translate(0px, 2.15px); }
+    20.05% { transform: translate(0px, 0.96px); }
+    25.26% { transform: translate(0px, 0.285px); }
+    30.6% { transform: translate(0px, -0.96px); }
+    32.68% { transform: translate(0px, -0.992px); }
+    36.46% { transform: translate(0px, -0.347px); }
+    38.15% { transform: translate(0px, -0.259px); }
+    39.84% { transform: translate(0px, -0.479px); }
+    43.75% { transform: translate(0px, -1.453px); }
+    45.96% { transform: translate(0px, -1.581px); }
+    55.6% { transform: translate(0px, -0.326px); }
+    57.55% { transform: translate(0px, 0.289px); }
+    61.46% { transform: translate(0px, 1.993px); }
+    63.8% { transform: translate(0px, 2.407px); }
+    65.63% { transform: translate(0px, 2.181px); }
+    70.05% { transform: translate(0px, 0.96px); }
+    75.26% { transform: translate(0px, 0.285px); }
+    80.86% { transform: translate(0px, -0.989px); }
+    82.81% { transform: translate(0px, -0.979px); }
+    87.76% { transform: translate(0px, -0.252px); }
+    89.58% { transform: translate(0px, -0.427px); }
+    93.1% { transform: translate(0px, -1.326px); }
+    94.79% { transform: translate(0px, -1.575px); }
+    96.74% { transform: translate(0px, -1.514px); }
+    100% { transform: translate(0px, -0.988px); }
+  }
+  @keyframes kf-heron-body {
+    0% { transform: rotate(0.706deg); }
+    18.36% { transform: rotate(0.874deg); }
+    37.5% { transform: rotate(-0.717deg); }
+    69.73% { transform: rotate(-0.027deg); }
+    83.2% { transform: rotate(-0.327deg); }
+    100% { transform: rotate(0.706deg); }
+  }
+  @keyframes kf-heron-body-neckUpper {
+    0% { transform: rotate(0deg); }
+    35.9375% { transform: rotate(0.006deg); }
+    37.0313% { transform: rotate(0.841deg); }
+    38.8542% { transform: rotate(4.401deg); }
+    39.7396% { transform: rotate(5.469deg); }
+    43.3333% { transform: rotate(5.662deg); }
+    43.6979% { transform: rotate(5.264deg); }
+    43.8021% { transform: rotate(10.921deg); }
+    43.9063% { transform: rotate(14.351deg); }
+    44.1146% { transform: rotate(19.536deg); }
+    44.375% { transform: rotate(24.813deg); }
+    44.6354% { transform: rotate(29.119deg); }
+    44.8438% { transform: rotate(31.736deg); }
+    45.0521% { transform: rotate(33.31deg); }
+    45.2083% { transform: rotate(33.499deg); }
+    45.3125% { transform: rotate(32.97deg); }
+    45.4167% { transform: rotate(31.754deg); }
+    45.5729% { transform: rotate(28.23deg); }
+    45.6771% { transform: rotate(24.409deg); }
+    45.7292% { transform: rotate(21.96deg); }
+    45.8333% { transform: rotate(15.835deg); }
+    45.8854% { transform: rotate(12.117deg); }
+    45.9375% { transform: rotate(7.95deg); }
+    46.0417% { transform: rotate(-1.662deg); }
+    46.1979% { transform: rotate(-18.587deg); }
+    46.3542% { transform: rotate(-37.036deg); }
+    46.5104% { transform: rotate(-56.173deg); }
+    46.6146% { transform: rotate(-69.975deg); }
+    46.6667% { transform: rotate(-77.893deg); }
+    51.6667% { transform: rotate(-77.32deg); }
+    52.0312% { transform: rotate(-65.427deg); }
+    53.75% { transform: rotate(-11.793deg); }
+    54.1146% { transform: rotate(-1.316deg); }
+    54.4792% { transform: rotate(7.776deg); }
+    54.8958% { transform: rotate(16.008deg); }
+    55.1042% { transform: rotate(19.217deg); }
+    55.3646% { transform: rotate(22.42deg); }
+    55.8333% { transform: rotate(26.157deg); }
+    56.3021% { transform: rotate(27.734deg); }
+    56.6667% { transform: rotate(27.775deg); }
+    57.0833% { transform: rotate(26.805deg); }
+    57.5521% { transform: rotate(24.651deg); }
+    58.0208% { transform: rotate(21.564deg); }
+    58.4896% { transform: rotate(17.667deg); }
+    59.0104% { transform: rotate(12.463deg); }
+    59.5313% { transform: rotate(6.346deg); }
+    60% { transform: rotate(0deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-heron-body-neckUpper-l1 {
+    0% { transform: rotate(0deg); }
+    63.2% { transform: rotate(0deg); }
+    63.41% { transform: rotate(-3.15deg); }
+    63.62% { transform: rotate(-5.4deg); }
+    63.79% { transform: rotate(-6.52deg); }
+    64% { transform: rotate(-6.999deg); }
+    64.42% { transform: rotate(-5.69deg); }
+    65.43% { transform: rotate(1.137deg); }
+    65.71% { transform: rotate(2.149deg); }
+    66.03% { transform: rotate(2.541deg); }
+    66.45% { transform: rotate(2.069deg); }
+    67.46% { transform: rotate(-0.41deg); }
+    68.05% { transform: rotate(-0.922deg); }
+    70.08% { transform: rotate(0.335deg); }
+    72.07% { transform: rotate(-0.121deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-heron-body-neckUpper-neckLower {
+    0% { transform: rotate(0deg); }
+    43.6979% { transform: rotate(0deg); }
+    43.75% { transform: rotate(-6.746deg); }
+    43.8021% { transform: rotate(-12.474deg); }
+    43.9063% { transform: rotate(-20.415deg); }
+    44.0104% { transform: rotate(-27.085deg); }
+    44.375% { transform: rotate(-47.967deg); }
+    45.2083% { transform: rotate(-93.558deg); }
+    45.5208% { transform: rotate(-109.671deg); }
+    45.7292% { transform: rotate(-118.774deg); }
+    45.8854% { transform: rotate(-123.617deg); }
+    45.9896% { transform: rotate(-125.277deg); }
+    46.0417% { transform: rotate(-125.483deg); }
+    46.1458% { transform: rotate(-124.393deg); }
+    46.25% { transform: rotate(-121.007deg); }
+    46.3021% { transform: rotate(-118.36deg); }
+    46.3542% { transform: rotate(-115.033deg); }
+    46.4063% { transform: rotate(-110.98deg); }
+    46.4583% { transform: rotate(-106.142deg); }
+    46.5104% { transform: rotate(-100.422deg); }
+    46.5625% { transform: rotate(-93.661deg); }
+    46.6146% { transform: rotate(-85.566deg); }
+    46.6667% { transform: rotate(-75.426deg); }
+    51.6667% { transform: rotate(-76.026deg); }
+    51.8229% { transform: rotate(-82.626deg); }
+    51.9792% { transform: rotate(-88.471deg); }
+    52.1354% { transform: rotate(-93.718deg); }
+    52.3438% { transform: rotate(-99.917deg); }
+    52.7083% { transform: rotate(-108.837deg); }
+    52.9167% { transform: rotate(-112.906deg); }
+    53.125% { transform: rotate(-116.24deg); }
+    53.4896% { transform: rotate(-120.304deg); }
+    53.8542% { transform: rotate(-122.12deg); }
+    54.2188% { transform: rotate(-121.791deg); }
+    54.6354% { transform: rotate(-119.103deg); }
+    55.1042% { transform: rotate(-113.722deg); }
+    55.625% { transform: rotate(-105.624deg); }
+    56.25% { transform: rotate(-93.926deg); }
+    56.9792% { transform: rotate(-78.473deg); }
+    57.7604% { transform: rotate(-60.363deg); }
+    58.5417% { transform: rotate(-40.84deg); }
+    59.3229% { transform: rotate(-19.785deg); }
+    60% { transform: rotate(0deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-heron-body-neckUpper-neckLower-head {
+    0% { transform: rotate(0deg); animation-timing-function: ease-out; }
+    23.6842105263% { transform: rotate(-22deg); }
+    73.6842105263% { transform: rotate(-22deg); animation-timing-function: ease-in; }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes kf-heron-body-neckUpper-neckLower-head-pupil {
+    0% { transform: translate(0px, 0px); }
+    25.0833333333% { transform: translate(0px, 0px); animation-timing-function: ease-out; }
+    28.6666666667% { transform: translate(-2.2px, 2px); }
+    35.8333333333% { transform: translate(-2.2px, 2px); }
+    100% { transform: translate(-2.2px, 2px); }
+  }
+  @keyframes kf-heron-body-neckUpper-neckLower-head-pupil-l1 {
+    0% { transform: translate(0px, 0px); }
+    60% { transform: translate(0px, 0px); }
+    82% { transform: translate(0px, 0px); animation-timing-function: ease-in-out; }
+    88% { transform: translate(2.2px, -2px); }
+    100% { transform: translate(2.2px, -2px); }
+  }
+  @keyframes kf-heron-body-neckUpper-neckLower-head-lid {
+    0% { transform: scale(1, 0); }
+    11% { transform: scale(1, 0); }
+    12.5% { transform: scale(1, 1); }
+    15% { transform: scale(1, 1); }
+    16.5% { transform: scale(1, 0); }
+    23.5% { transform: scale(1, 0); }
+    25% { transform: scale(1, 1); }
+    27% { transform: scale(1, 1); }
+    28.5% { transform: scale(1, 0); }
+    86% { transform: scale(1, 0); }
+    88.5% { transform: scale(1, 1); }
+    93% { transform: scale(1, 1); }
+    95.5% { transform: scale(1, 0); }
+    100% { transform: scale(1, 0); }
+  }
+  @keyframes kf-reeds-0-stalk {
+    0% { transform: rotate(-2.5deg); animation-timing-function: ease-in-out; }
+    50% { transform: rotate(2.5deg); animation-timing-function: ease-in-out; }
+    100% { transform: rotate(-2.5deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .h-cloudsFar, .h-cloudsNear, .h-dragonfly, .h-dragonfly-wings, .h-fish, .h-fish-lift, .h-fish-lift-spin, .h-fish-lift-spin-squash, .h-ripples-0-ring, .h-ripples-0-ring-l1, .h-ripples-1-ring, .h-ripples-1-ring-l1, .h-ripples-2-ring, .h-ripples-2-ring-l1, .h-drops-0-drop, .h-drops-0-drop-l1, .h-drops-0-drop-l2, .h-drops-1-drop, .h-drops-1-drop-l1, .h-drops-1-drop-l2, .h-drops-2-drop, .h-drops-2-drop-l1, .h-drops-2-drop-l2, .h-drops-3-drop, .h-drops-3-drop-l1, .h-drops-3-drop-l2, .h-drops-4-drop, .h-drops-4-drop-l1, .h-drops-4-drop-l2, .h-heron, .h-heron-body, .h-heron-body-neckUpper, .h-heron-body-neckUpper-l1, .h-heron-body-neckUpper-neckLower, .h-heron-body-neckUpper-neckLower-head, .h-heron-body-neckUpper-neckLower-head-pupil, .h-heron-body-neckUpper-neckLower-head-pupil-l1, .h-heron-body-neckUpper-neckLower-head-lid, .h-reeds-0-stalk, .h-reeds-1-stalk, .h-reeds-2-stalk, .h-reeds-3-stalk, .h-reeds-4-stalk, .h-reeds-5-stalk, .h-reeds-6-stalk { animation: none; }
+  }
+  </style>
+  <g>
+    <g class="h-sky">
+      <rect x="0" y="0" width="800" height="500" fill="#f5d9ad"/>
+      <rect x="0" y="0" width="800" height="120" fill="#f2c98f"/>
+      <circle cx="610" cy="214" r="46" fill="#f7b26b"/>
+    </g>
+      <g class="h-cloudsFar">
+        <use href="#h-auto-0" x="40" y="96"/>
+        <use href="#h-auto-1" x="50.8" y="91.8"/>
+        <use href="#h-auto-0" x="150" y="106"/>
+        <use href="#h-auto-1" x="160.8" y="101.8"/>
+        <use href="#h-auto-0" x="250" y="90"/>
+        <use href="#h-auto-1" x="260.8" y="85.8"/>
+        <use href="#h-auto-0" x="330" y="108"/>
+        <use href="#h-auto-1" x="340.8" y="103.8"/>
+        <use href="#h-auto-0" x="440" y="100"/>
+        <use href="#h-auto-1" x="450.8" y="95.8"/>
+        <use href="#h-auto-0" x="560" y="88"/>
+        <use href="#h-auto-1" x="570.8" y="83.8"/>
+        <use href="#h-auto-0" x="700" y="106"/>
+        <use href="#h-auto-1" x="710.8" y="101.8"/>
+      </g>
+      <g class="h-cloudsNear">
+        <use href="#h-auto-2" x="80" y="150"/>
+        <use href="#h-auto-3" x="98" y="143"/>
+        <use href="#h-auto-2" x="360" y="164"/>
+        <use href="#h-auto-3" x="378" y="157"/>
+        <use href="#h-auto-2" x="560" y="140"/>
+        <use href="#h-auto-3" x="578" y="133"/>
+      </g>
+    <g class="h-hills">
+      <path d="M 0 300 C 90 262 170 258 250 276 C 340 296 420 250 520 262 C 600 270 700 236 800 250 L 800 320 L 0 320 Z" fill="#7fa38f"/>
+      <path d="M 0 320 C 120 298 220 302 330 314 C 450 328 560 290 660 298 C 730 304 770 296 800 288 L 800 330 L 0 330 Z" fill="#456f60"/>
+    </g>
+      <g class="h-dragonfly">
+        <line x1="460" y1="196" x2="504" y2="196" stroke="#3b6f8f" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="458" cy="196" r="4.5" fill="#3b6f8f"/>
+          <g class="h-dragonfly-wings">
+            <use href="#h-auto-4" x="478" y="187"/>
+            <use href="#h-auto-4" x="486" y="205"/>
+          </g>
+      </g>
+      <g class="h-fish">
+          <g class="h-fish-lift">
+              <g class="h-fish-lift-spin">
+                  <g class="h-fish-lift-spin-squash">
+                    <polygon points="152,342 173,332 193,339 193,345 173,352" fill="#d9762b"/>
+                    <polygon points="190,342 208,330 208,354" fill="#a8531a"/>
+                    <circle cx="163" cy="339" r="2.4" fill="#1a1a1a"/>
+                  </g>
+              </g>
+          </g>
+      </g>
+    <g class="h-water">
+      <rect x="0" y="320" width="800" height="180" fill="#1c5561"/>
+      <rect x="60" y="372" width="90" height="4" fill="#2f7482" rx="2"/>
+      <rect x="300" y="412" width="140" height="4" fill="#2f7482" rx="2"/>
+      <rect x="520" y="386" width="70" height="4" fill="#2f7482" rx="2"/>
+      <rect x="640" y="448" width="120" height="4" fill="#2f7482" rx="2"/>
+      <rect x="120" y="470" width="60" height="4" fill="#2f7482" rx="2"/>
+    </g>
+    <g class="h-ripples">
+      <g class="h-ripples-0">
+          <g class="h-ripples-0-ring">
+            <g class="h-ripples-0-ring-l1">
+              <use href="#h-auto-5" x="172" y="320"/>
+            </g>
+          </g>
+      </g>
+      <g class="h-ripples-1">
+          <g class="h-ripples-1-ring">
+            <g class="h-ripples-1-ring-l1">
+              <use href="#h-auto-5" x="172" y="320"/>
+            </g>
+          </g>
+      </g>
+      <g class="h-ripples-2">
+          <g class="h-ripples-2-ring">
+            <g class="h-ripples-2-ring-l1">
+              <use href="#h-auto-5" x="172" y="320"/>
+            </g>
+          </g>
+      </g>
+    </g>
+    <g class="h-drops">
+      <g class="h-drops-0">
+          <g class="h-drops-0-drop">
+            <g class="h-drops-0-drop-l1">
+              <g class="h-drops-0-drop-l2">
+                <use href="#h-auto-6" x="172" y="316"/>
+              </g>
+            </g>
+          </g>
+      </g>
+      <g class="h-drops-1">
+          <g class="h-drops-1-drop">
+            <g class="h-drops-1-drop-l1">
+              <g class="h-drops-1-drop-l2">
+                <use href="#h-auto-6" x="172" y="316"/>
+              </g>
+            </g>
+          </g>
+      </g>
+      <g class="h-drops-2">
+          <g class="h-drops-2-drop">
+            <g class="h-drops-2-drop-l1">
+              <g class="h-drops-2-drop-l2">
+                <use href="#h-auto-6" x="172" y="316"/>
+              </g>
+            </g>
+          </g>
+      </g>
+      <g class="h-drops-3">
+          <g class="h-drops-3-drop">
+            <g class="h-drops-3-drop-l1">
+              <g class="h-drops-3-drop-l2">
+                <use href="#h-auto-6" x="172" y="316"/>
+              </g>
+            </g>
+          </g>
+      </g>
+      <g class="h-drops-4">
+          <g class="h-drops-4-drop">
+            <g class="h-drops-4-drop-l1">
+              <g class="h-drops-4-drop-l2">
+                <use href="#h-auto-6" x="172" y="316"/>
+              </g>
+            </g>
+          </g>
+      </g>
+    </g>
+      <g class="h-heron">
+        <line x1="290" y1="262" x2="284" y2="352" stroke="#b6c1ca" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        <line x1="318" y1="262" x2="326" y2="352" stroke="#b6c1ca" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          <g class="h-heron-body">
+            <polygon points="350,232 392,214 396,244 356,258" fill="#b6c1ca"/>
+            <ellipse cx="305" cy="240" rx="58" ry="32" fill="#dfe4e9"/>
+            <ellipse cx="318" cy="236" rx="38" ry="18" fill="#b6c1ca" transform="rotate(-8 318 236)"/>
+              <g class="h-heron-body-neckUpper">
+                <g class="h-heron-body-neckUpper-l1">
+                  <line x1="262" y1="228" x2="238" y2="152" stroke="#dfe4e9" fill="none" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+                    <g class="h-heron-body-neckUpper-neckLower">
+                      <line x1="238" y1="152" x2="216.319" y2="83.342" stroke="#dfe4e9" fill="none" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+                        <g class="h-heron-body-neckUpper-neckLower-head">
+                          <polygon points="202.318541508529,75.3420481103418 138.318541508529,87.3420481103418 202.318541508529,95.3420481103418" fill="#2b2f33"/>
+                          <ellipse cx="216.319" cy="83.342" rx="20" ry="14" fill="#dfe4e9"/>
+                          <polygon points="226.318541508529,73.3420481103418 250.318541508529,61.34204811034181 230.318541508529,81.3420481103418" fill="#b6c1ca"/>
+                          <circle cx="208.319" cy="80.342" r="5.5" fill="#f2c230"/>
+                            <g class="h-heron-body-neckUpper-neckLower-head-pupil">
+                              <g class="h-heron-body-neckUpper-neckLower-head-pupil-l1">
+                                <circle cx="207.319" cy="80.342" r="2.6" fill="#1a1a1a"/>
+                              </g>
+                            </g>
+                            <g class="h-heron-body-neckUpper-neckLower-head-lid">
+                              <ellipse cx="208.319" cy="80.342" rx="6.5" ry="6" fill="#dfe4e9"/>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+              </g>
+          </g>
+      </g>
+    <g class="h-reeds">
+      <g class="h-reeds-0">
+          <g class="h-reeds-0-stalk">
+            <line x1="575" y1="328" x2="567.5" y2="170" stroke="#22362f" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <use href="#h-auto-7" x="567.5" y="156"/>
+          </g>
+      </g>
+      <g class="h-reeds-1">
+          <g class="h-reeds-1-stalk">
+            <line x1="612" y1="328" x2="620.2" y2="115" stroke="#22362f" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <use href="#h-auto-7" x="620.2" y="101"/>
+          </g>
+      </g>
+      <g class="h-reeds-2">
+          <g class="h-reeds-2-stalk">
+            <line x1="640" y1="328" x2="636.56" y2="148" stroke="#22362f" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <use href="#h-auto-7" x="636.56" y="134"/>
+          </g>
+      </g>
+      <g class="h-reeds-3">
+          <g class="h-reeds-3-stalk">
+            <line x1="672" y1="328" x2="685.68" y2="92" stroke="#22362f" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <use href="#h-auto-7" x="685.68" y="78"/>
+          </g>
+      </g>
+      <g class="h-reeds-4">
+          <g class="h-reeds-4-stalk">
+            <line x1="703" y1="328" x2="695.48" y2="132" stroke="#22362f" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <use href="#h-auto-7" x="695.48" y="118"/>
+          </g>
+      </g>
+      <g class="h-reeds-5">
+          <g class="h-reeds-5-stalk">
+            <line x1="736" y1="328" x2="743.2" y2="80" stroke="#22362f" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <use href="#h-auto-7" x="743.2" y="66"/>
+          </g>
+      </g>
+      <g class="h-reeds-6">
+          <g class="h-reeds-6-stalk">
+            <line x1="768" y1="328" x2="758" y2="120" stroke="#22362f" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <use href="#h-auto-7" x="758" y="106"/>
+          </g>
+      </g>
+    </g>
+  </g>
+</svg>

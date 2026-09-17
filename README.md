@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/crane.svg" width="300" alt="A walking crane, animated by Heron">
+<img src="docs/fishing.svg" width="600" alt="A heron waits in an evening pond, strikes, and misses a fish. Animated by Heron.">
 
 # Heron
 
@@ -9,10 +9,20 @@ Built so that an agent can write it, look at it, and fix it.
 
 </div>
 
-That crane is not a GIF or a video. It is one 7 kB SVG file with CSS keyframes
-inside it, generated from [`examples/crane.ts`](examples/crane.ts). No
-JavaScript, no runtime, no external references — it works in an `<img>` tag,
+That pond is not a GIF or a video. It is one 44 kB SVG file with CSS keyframes
+inside it, generated from [`examples/heron-fishing.ts`](examples/heron-fishing.ts).
+No JavaScript, no runtime, no external references — it works in an `<img>` tag,
 in this README, and offline in ten years.
+
+Everything in it is one six-second loop: reeds swaying on staggered phases, two
+cloud layers in parallax, a dragonfly hovering on periodic noise, the bird
+breathing on its own noise layer. Its eye finds the fish first, the head cocks,
+and then `reach()` drives a two-bone neck strike to a point on the water. The
+fish flips out with squash-and-stretch, lands with a splash, three ripple rings
+spread from a staggered field, and the neck rings back up on an additive
+`spring()` layer. Every authored key compiles exactly; only the procedural
+noise, IK and spring layers are baked, and the compiler certifies those against
+a stated error budget.
 
 ## Why
 
@@ -95,6 +105,28 @@ compiling exactly. More usefully, it reported what the loop caught that it would
 otherwise have shipped blind: a swing foot that never actually left the ground
 (the paw sat one unit high, invisible in a still frame), a landing skate, and
 artwork that read as a bear cub until it looked at a render.
+
+## A short
+
+The same primitives make a cartoon. *Fore!* is a fourteen-second cutout short
+in the paper-and-scissors style: flat fills, no outlines, characters that slide
+instead of walking and bob when they talk, mouths that flap with `swap()`, and
+hard cuts between a wide shot and a close-up insert.
+
+<img src="docs/fore.svg" width="620" alt="Fore! A cutout crane tees off, the ball bonks a gopher, and the gopher steals the ball.">
+
+A crane waggles its club at the tee while a gopher pops up by the flag. Backswing,
+a hold at the top, the whoosh; the ball arcs across the fairway and lands on the
+gopher's head. X eyes, orbiting stars, and it drops back down the hole. The crane
+cheers and slides over to collect. Cut to a close-up: the gopher pops out of a
+*different* hole, ball in paw, tongue out. Cut back: the crane skids to a stop,
+pauses, tilts its head, "?!", and both slide off screen right. Iris out, FIN.
+
+It is built from [`examples/fore.ts`](examples/fore.ts) as a `score()` of
+named beats, and the storyboard below is what `heron sheet --cues` prints from
+that score — one labelled frame per beat, which is how the timing was judged:
+
+<img src="docs/fore-sheet.png" width="620" alt="Storyboard: one frame per beat of the Fore! short">
 
 ## Writing a character
 
@@ -271,7 +303,9 @@ const restored = parseScene(json);
 For native mobile playback without a WebView, the Lottie backend maps Heron's
 part hierarchy, pivots, transform/opacity channels and stroke drawing to
 parented vector layers. An exported `Score` or `CueSheet` becomes Lottie
-markers. Procedural channels are sampled at the requested playback rate:
+markers. Procedural channels are sampled at the requested playback rate and
+thinned to the frames a linear replay needs, within the same error budget the
+SVG compiler certifies:
 
 ```bash
 heron lottie film.ts -o film.json --fps 60 --check
@@ -318,11 +352,13 @@ Lottie and video are output adapters, not runtime dependencies of the scene.
 
 ## Status
 
-Working end to end: rig DSL, timeline, compiler, agent CLI, lints, one polished
-walk cycle. See [PLAN.md](PLAN.md) for the design and its reasoning.
+Working end to end: rig DSL, timeline, compiler, agent CLI, lints, Lottie and
+video adapters, and the examples above. See [PLAN.md](PLAN.md) for the design
+and its reasoning.
 
 ```bash
-node --test test/*.test.ts
+pnpm test                                   # typecheck + unit tests
+pnpm examples                               # heron check over every example scene
 node src/cli.ts build examples/crane.ts -o out/crane.svg
 ```
 
