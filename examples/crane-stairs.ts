@@ -32,7 +32,7 @@ import {
 } from '../src/index.ts';
 import { walkCycle } from './lib/walk.ts';
 import { journey, stairs, strideLength } from './lib/journey.ts';
-import { GROUND, INK, SEGMENTS, craneAlone, craneRig, offsetFarLeg } from './crane-rig.ts';
+import { GROUND, INK, SEGMENTS, craneAlone, craneRig, offsetFarLeg } from './lib/crane-rig.ts';
 
 // --- the gait ----------------------------------------------------------------
 // Stance below 0.5 is what makes this a run and not a fast walk: the two stance

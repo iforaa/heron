@@ -14,7 +14,7 @@ import { walkCycle } from './lib/walk.ts';
 import { journey } from './lib/journey.ts';
 import {
   FAR, GROUND, INK, SEGMENTS, craneRig, offsetFarLeg,
-} from './crane-rig.ts';
+} from './lib/crane-rig.ts';
 
 const SKY = '#f6faf7';
 const TRACK = '#d9ece1';
@@ -185,7 +185,8 @@ body.animate({ skewY: beats.during('recoil', spring({ ...RECOIL, swing: -4, damp
 // Dust fans backward (screen-right) while rising. Stagger is expressed only in
 // the local keys, keeping every particle an ordinary independently tracked part.
 craneSkid.field('dust').each((particle, i, n) => {
-  const delay = (i / Math.max(1, n - 1)) * 0.28;
+  // Never zero: a delay of 0 would repeat the t=0 key, which keys() refuses.
+  const delay = 0.02 + (i / Math.max(1, n - 1)) * 0.26;
   const row = i % 3;
   const x = 530 + i * 19;
   const y = GROUND - 12 - row * 8;

@@ -1,7 +1,7 @@
 /**
  * The Tenfore mark, traced and then made to run on the spot.
  *
- * The drawing lives in `crane-rig.ts` — every coordinate in it was measured by
+ * The drawing lives in `lib/crane-rig.ts` — every coordinate in it was measured by
  * `heron trace` from icon.png, and the anatomy laid over those coordinates is
  * the part no tracer can supply. This file is only the performance: one gait,
  * one cycle, looping forever.
@@ -11,7 +11,7 @@
 
 import { keys, swing, type Character } from '../src/index.ts';
 import { walkCycle, sway, pulse, applyGait } from './lib/walk.ts';
-import { SEGMENTS, craneAlone, offsetFarLeg } from './crane-rig.ts';
+import { SEGMENTS, craneAlone, offsetFarLeg } from './lib/crane-rig.ts';
 
 // Cropped to the ink, measured over the whole cycle rather than the rest pose —
 // the swinging leg reaches wider than a still frame shows. Without the ring the

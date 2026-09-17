@@ -1,5 +1,5 @@
 /**
- * Traced from crane-golf-icon.png by `heron trace`.
+ * Traced from tenfore-icon.png (the same app icon) by `heron trace`.
  *
  * GEOMETRY IS MEASURED. ANATOMY IS NOT. This file renders, but it cannot move:
  * every run of ink is a sibling in one flat layer, so there is no leg to rotate.
@@ -7,7 +7,7 @@
  * end up quietly wrong.
  *
  *   1. Check the trace before touching it:
- *        heron match crane-golf-traced.ts crane-golf-icon.png
+ *        heron match crane-golf-traced.ts tenfore-icon.png
  *      Overlap should already be high. If it is not, re-run `heron trace` with a
  *      different --epsilon or --threshold rather than hand-editing points.
  *

@@ -7,7 +7,7 @@
  */
 
 import {
-  arc, character, circle, easeIn, easeInOut, easeOut, field, keys, layer,
+  arc, character, circle, easeInOut, easeOut, field, keys, layer,
   line, part, polygon, rect, strokeText, type Vec2,
 } from '../src/index.ts';
 

@@ -30,7 +30,7 @@ import {
 import { walkCycle } from './lib/walk.ts';
 import { hops, jump } from './lib/jump.ts';
 import { journey, strideLength } from './lib/journey.ts';
-import { ANKLE, GROUND, SEGMENTS, craneRig, offsetFarLeg } from './crane-rig.ts';
+import { ANKLE, GROUND, SEGMENTS, craneRig, offsetFarLeg } from './lib/crane-rig.ts';
 
 // --- the two birds -----------------------------------------------------------
 

@@ -1,7 +1,7 @@
 /**
  * The Tenfore crane as a loading spinner: the bird runs in place at the
  * centre of its own ring, and the ring — the icon's two measured arcs, gaps
- * and all — spins around it. `crane-rig.ts` dropped the ring because a
+ * and all — spins around it. `lib/crane-rig.ts` dropped the ring because a
  * travelling bird trapped in a hoop reads wrong; a bird running in place
  * inside a spinning hoop is exactly the loader idiom, so it comes back for
  * the one case it works in.
@@ -16,7 +16,7 @@ import {
 import { applyGait, bodyBob, walkCycle } from './lib/walk.ts';
 import {
   BIRD, GROUND, SEGMENTS, craneRig, offsetFarLeg,
-} from './crane-rig.ts';
+} from './lib/crane-rig.ts';
 
 const INK = '#2C7C4D';
 const FAR = '#84b39a';

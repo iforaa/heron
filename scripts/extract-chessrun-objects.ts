@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const input = process.argv[2];
-if (!input) throw new Error('usage: node examples/extract-chessrun-objects.ts <source.svg> [output.ts]');
+if (!input) throw new Error('usage: node scripts/extract-chessrun-objects.ts <source.svg> [output.ts]');
 const output = process.argv[3] ?? 'examples/chessrun-objects.ts';
 const svg = readFileSync(input, 'utf8');
 

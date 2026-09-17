@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const input = process.argv[2];
-if (!input) throw new Error('usage: node examples/extend-chessrun-svg.ts <source.svg> [output.svg]');
+if (!input) throw new Error('usage: node scripts/extend-chessrun-svg.ts <source.svg> [output.svg]');
 const output = process.argv[3] ?? 'out/animated-logo-extended.svg';
 const source = readFileSync(input, 'utf8');
 

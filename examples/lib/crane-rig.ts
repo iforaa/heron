@@ -34,7 +34,7 @@
  * reference, at y=975.
  */
 
-import { character, part, ribbon, path, keys, type Character, type Vec2 } from '../src/index.ts';
+import { character, part, ribbon, path, keys, type Character, type Vec2 } from '../../src/index.ts';
 
 export const INK = '#3ba064';
 // Two legs in one colour read as one leg. A lighter tint is the cheapest depth

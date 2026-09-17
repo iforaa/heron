@@ -24,14 +24,14 @@
  *   heron variants examples/crane-takes.ts --motion body.neck.head@260,64 --strip 3
  *   heron variants examples/crane-takes.ts --motion body.neck.head@260,64 --only neck=9
  *
- * The rig is `crane-rig.ts`'s, reached through the `craneAlone` factory that
+ * The rig is `lib/crane-rig.ts`'s, reached through the `craneAlone` factory that
  * `crane-stairs.ts` already uses to measure a stride — a scene being a function of
  * its numbers is an idiom this project had before it had a grid to exercise it.
  */
 
 import { grid, type Character, type Variant } from '../src/index.ts';
 import { applyGait, sway, walkCycle } from './lib/walk.ts';
-import { SEGMENTS, craneAlone, offsetFarLeg } from './crane-rig.ts';
+import { SEGMENTS, craneAlone, offsetFarLeg } from './lib/crane-rig.ts';
 
 // The same run `crane-stairs.ts` uses. Copied rather than imported: importing a
 // scene module would build its whole 7-second film as a side effect just to read

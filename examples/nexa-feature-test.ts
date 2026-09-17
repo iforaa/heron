@@ -17,7 +17,6 @@ const H = 720;
 const CX = W / 2;
 const CY = H / 2;
 const DURATION = 4;
-const INK = '#06101e';
 const CYAN = '#54e8ff';
 const BLUE = '#4169ff';
 const WHITE = '#f8fbff';
